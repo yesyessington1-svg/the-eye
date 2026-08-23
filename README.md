@@ -1,11 +1,32 @@
 # The Eye
 
-**A phone worn at chest or head height that turns depth into speech and vibration, so a blind or
-low-vision walker can tell whether the space ahead is passable.**
+**An intelligent visual-to-haptic transduction system for spatial perception and assisted
+navigation, built to reduce collisions for people with visual impairments.**
 
-Not a white cane replacement. A cane finds what is at your feet, one pace ahead, by touching it.
-The Eye answers a different question: what is between here and the far side of the room, do I fit
-through it, and it says out loud when it cannot answer.
+The platform analyses the space around the wearer and offers several possible navigation responses
+rather than a single alarm. It implements self-guidance through acoustic and vibratory signals: the
+phone becomes the main perception point for the surrounding environment and identifies redirection
+options when the wearer would otherwise be forced to stop.
+
+The wearer can ask it a question at any time, either by a haptic gesture shaped like a reversed L
+formed with the index finger and thumb, or by voice.
+
+Running underneath that, continuously, the collision-prevention channel measures the space
+accessible to the wearer's body and estimates whether there is room to keep moving. Rather than
+treating every detection as certain, it weights what it is told by the confidence its own sensors
+report, which is what keeps false and inaccurate warnings down.
+
+So The Eye is not an obstacle detector. It turns visual information into a spatial representation
+delivered through vibration and sound, which is a different way for a person to perceive and
+interpret the space they are standing in.
+
+### Team
+
+| | |
+|---|---|
+| **Ștefan Crețu** | scientific research framing and research direction |
+| **Sandu** | creativity, vision, and design of the prototype |
+| **George** | full-stack development |
 
 ---
 

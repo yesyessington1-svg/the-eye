@@ -61,6 +61,10 @@ public class ApertureScan {
   // 0.45 to 0.75m on most frames - a knee, most likely - and the fan answered BLOCKED on 58% of
   // them, so the wearer was never offered a way round anything.
   private static final float ROUTING_MIN_M = 0.60f;
+
+  // what an unlit, untextured, unseen bearing is worth as a route: enough to walk into but not
+  // enough to be chosen over somewhere we can actually see
+  private static final float UNKNOWN_DISTANCE_M = 1.20f;
   private static final float MAX_RANGE_M = 4.00f;
 
   // open = reaches this much past the nearest barrier. relative, not absolute: a fixed 2m
@@ -254,6 +258,12 @@ public class ApertureScan {
   /** the distance we use for ROUTING, which ignores anything too close to walk around */
   private float routingDistance(int bin) {
     float d = freeDistance(bin);
+    // No returns at all in this direction is not the same as open, and treating it as open is how
+    // the device recommended walking into painted walls: they give depth-from-motion almost nothing
+    // to match, so "too few hits to close the bin" is the normal state for a wall, not for a gap.
+    if (seen[bin] < MIN_BIN_HITS) {
+      return UNKNOWN_DISTANCE_M;
+    }
     if (d >= MAX_RANGE_M && world != null) {
       // nothing in this frame, but the room map may remember it from when the head was turned.
       // this is what widens the usable fan past the 65 degrees the sensor can see at any instant

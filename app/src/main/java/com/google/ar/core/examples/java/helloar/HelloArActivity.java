@@ -343,6 +343,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   // "chair" instead of "obstacle" from a detection the wearer never knew happened
   private String hazardName = null;
   private final ObjectMemory objectMemory = new ObjectMemory();
+  private final WallMap walls = new WallMap();
 
   // what the vision model called the thing the local detector had no word for
   private volatile String askedName = null;
@@ -860,6 +861,17 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         cameraYawDeg = (float) Math.toDegrees(Math.atan2(-zAxis[0], -zAxis[2]));
         guardian.gapScan().setWorldContext(
             guardian.worldFan(), cameraYawDeg, System.currentTimeMillis());
+
+        // walls go into the same room map the fan already consults, so a wall behind you stays
+        // blocked. they carry full weight: a fitted plane is worth more than a single depth pixel
+        walls.update(
+            session.getAllTrackables(Plane.class),
+            camera.getPose(),
+            cameraYawDeg,
+            35f,
+            1.5f,
+            guardian.worldFan(),
+            System.currentTimeMillis());
         guardianReading =
             guardian.evaluate(
                 depthImage, camera.getImageIntrinsics(), motionBudget.speedMps(), upInCamera);
@@ -1748,7 +1760,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             floorEndsM,
             guardian.beamDiagnostics()
                 + " "
-                + guardian.worldFan().diagnostics(cameraYawDeg, System.currentTimeMillis())));
+                + guardian.worldFan().diagnostics(cameraYawDeg, System.currentTimeMillis())
+                + " "
+                + walls.diagnostics()));
   }
 
   /**
@@ -2594,6 +2608,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // the sample lit its virtual pawns with this. we deleted the pawns, and estimating environmental
     // lighting every frame is not free, so it's off
     config.setLightEstimationMode(Config.LightEstimationMode.DISABLED);
+
+    // vertical planes are walls, and ARCore fits and tracks them across frames whether or not we
+    // ask. depth-from-motion is worst on exactly these surfaces - a painted wall has nothing to
+    // match between frames - so this is the only channel that reliably sees them
+    config.setPlaneFindingMode(Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL);
     if (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
       config.setDepthMode(Config.DepthMode.AUTOMATIC);
     } else {

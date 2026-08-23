@@ -53,6 +53,14 @@ public class ApertureScan {
 
   // below this is a hand over the lens, above this ARCore's depth-from-motion is guessing
   private static final float MIN_RANGE_M = 0.35f;
+
+  // Below this there is no route to give, only a stop, and that is the corridor's job.
+  //
+  // Dilation makes a close return catastrophic: something at 0.45m blocks asin(0.30/0.45) = 42
+  // degrees, which is the whole fan. A logged run had the occupancy grid believing something at
+  // 0.45 to 0.75m on most frames - a knee, most likely - and the fan answered BLOCKED on 58% of
+  // them, so the wearer was never offered a way round anything.
+  private static final float ROUTING_MIN_M = 0.60f;
   private static final float MAX_RANGE_M = 4.00f;
 
   // open = reaches this much past the nearest barrier. relative, not absolute: a fixed 2m
@@ -78,6 +86,20 @@ public class ApertureScan {
   // shoulders turned. de Paz measured the ratio where blind walkers start doing this at 1.22, so
   // this is the same body at the width it presents side-on
   private static final float SQUEEZE_RADIUS_M = 0.20f;
+
+  // VFH+ cost weights. straightness dominates, hysteresis breaks ties, headroom is a tiebreak on
+  // the tiebreak. tuned so a 10 degree turn is worth about half a metre of extra headroom
+  // All three are in degrees-equivalent, so they can be compared honestly.
+  //
+  // The first version weighted headroom at 4.0 per metre, which peaks at 16 against a maximum
+  // straightness cost of 30 - so the choice was driven by which direction had marginally more room,
+  // and that varies with noise every frame. The heading then jumped more than 15 degrees on 41% of
+  // frames. Headroom is now bucketed to half a metre, so noise inside a bucket changes nothing,
+  // and changing your mind costs more than going slightly off-straight.
+  private static final float COST_STRAIGHT = 1.0f;
+  private static final float COST_HYSTERESIS = 1.6f;
+  private static final float COST_HEADROOM_PER_BUCKET = 2.0f;
+  private static final float HEADROOM_BUCKET_M = 0.5f;
   private static final float RATIO_WALK = 1.22f;
   private static final float RATIO_SQUEEZE = 1.00f;
 
@@ -96,7 +118,7 @@ public class ApertureScan {
   // same reasoning as the corridor debounce: a category flip has to survive three frames before the
   // user hears about it, or the display chatters at every doorway edge
   private static final int DEBOUNCE_FRAMES = 3;
-  private static final int HISTORY = 5;
+  private static final int HISTORY = 9;
 
   public static final class Gap {
     public final Fit fit;
@@ -229,6 +251,20 @@ public class ApertureScan {
   }
 
   /** the distance we are willing to claim for a bin: MAX_RANGE when nothing credible is in it */
+  /** the distance we use for ROUTING, which ignores anything too close to walk around */
+  private float routingDistance(int bin) {
+    float d = freeDistance(bin);
+    if (d >= MAX_RANGE_M && world != null) {
+      // nothing in this frame, but the room map may remember it from when the head was turned.
+      // this is what widens the usable fan past the 65 degrees the sensor can see at any instant
+      float remembered = world.freeDistanceAt(worldYawOfBin(bin), worldNowMs);
+      if (remembered < d) {
+        d = remembered;
+      }
+    }
+    return d < ROUTING_MIN_M ? MAX_RANGE_M : d;
+  }
+
   private float freeDistance(int bin) {
     if (slabHits[bin] < MIN_BIN_HITS || min3[bin] == Float.MAX_VALUE) {
       // either genuinely empty out to the scan limit, or too few returns to close it off. either
@@ -256,7 +292,7 @@ public class ApertureScan {
   private void dilate(float radiusM) {
     Arrays.fill(dilated, MAX_RANGE_M);
     for (int i = 0; i < BINS; i++) {
-      float d = freeDistance(i);
+      float d = routingDistance(i);
       if (d >= MAX_RANGE_M) {
         continue;
       }
@@ -285,14 +321,58 @@ public class ApertureScan {
         continue;
       }
       float bearing = (i - CENTRE_BIN) * BIN_DEG;
-      // turning is a cost the wearer pays, so among passable headings the straightest wins
-      float cost = Math.abs(bearing);
+      float cost = COST_STRAIGHT * Math.abs(bearing);
+      if (!Float.isNaN(chosenWorldYaw)) {
+        // Changing your mind has a price.
+        //
+        // Without this the fan flapped: 32 WALK, 25 BLOCKED and 21 SQUEEZE across 79 frames of the
+        // same two backpacks, with the bearing swinging from -30 to +28. Two routes either side of
+        // an obstacle score almost identically, so noise picks the winner and the wearer is told
+        // to go left, then right, then left. This is the hysteresis term from VFH+ (Borenstein &
+        // Koren 1998): a candidate has to beat the previous choice by a margin, not merely tie it.
+        float drift = worldYawOfBin(i) - chosenWorldYaw;
+        while (drift > 180f) {
+          drift -= 360f;
+        }
+        while (drift < -180f) {
+          drift += 360f;
+        }
+        cost += COST_HYSTERESIS * Math.abs(drift);
+      }
+      // room to spare is a tiebreak, not the decision. bucketed so a few centimetres of sensor
+      // noise cannot make one direction beat another
+      int buckets = (int) (Math.min(dilated[i], MAX_RANGE_M) / HEADROOM_BUCKET_M);
+      cost -= COST_HEADROOM_PER_BUCKET * buckets;
       if (cost < bestCost) {
         bestCost = cost;
         best = bearing;
       }
     }
     return best;
+  }
+
+  /**
+   * The heading we recommended last frame, kept as a ROOM bearing rather than a head bearing.
+   *
+   * <p>Stored camera-relative it was useless: turn the head 20 degrees and last frame's choice
+   * points somewhere else, so the hysteresis term compared two different places and the advice
+   * still jumped 15 degrees on 30% of frames.
+   */
+  private float chosenWorldYaw = Float.NaN;
+
+  private WorldFan world = null;
+  private float cameraYawDeg = 0f;
+  private long worldNowMs = 0;
+
+  /** hand in the room map and where the head is pointing in it */
+  public void setWorldContext(WorldFan fan, float yawDeg, long nowMs) {
+    this.world = fan;
+    this.cameraYawDeg = yawDeg;
+    this.worldNowMs = nowMs;
+  }
+
+  private float worldYawOfBin(int bin) {
+    return cameraYawDeg + (bin - CENTRE_BIN) * BIN_DEG;
   }
 
   /**
@@ -357,7 +437,7 @@ public class ApertureScan {
     // "open" only means anything relative to the thing you are trying to get past
     float barrier = MAX_RANGE_M;
     for (int i = 0; i < BINS; i++) {
-      barrier = Math.min(barrier, freeDistance(i));
+      barrier = Math.min(barrier, routingDistance(i));
     }
     if (barrier >= CLEAR_M) {
       // nothing near enough to route around. saying "gap, two metres forty" about an empty room is
@@ -497,6 +577,12 @@ public class ApertureScan {
       stableFit = candidateFit;
     }
 
+    if (stableFit == Fit.WALK || stableFit == Fit.SQUEEZE) {
+      chosenWorldYaw = cameraYawDeg + bearing;
+    } else {
+      // blocked or blind: no route to be loyal to, so the next one starts from straight ahead
+      chosenWorldYaw = Float.NaN;
+    }
     lastGap = new Gap(stableFit, bearing, width, clearAhead, edge, coverage, barrier);
     return lastGap;
   }

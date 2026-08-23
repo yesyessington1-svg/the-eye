@@ -51,6 +51,8 @@ public class SceneDescriber {
       "You are the eyes of a blind person wearing a camera on their chest or forehead. "
           + "They have asked whether they can walk forward. "
           + "Start with exactly one word: GO, CAREFUL or STOP. "
+          + "The wearer needs an instruction, not a description. Keep the sentence short enough "
+          + "that the instruction is the part they hear first. "
           + "STOP means something is in their path within about a step. "
           + "CAREFUL means something is in their path but further off, or the floor changes. "
           + "GO means the way ahead is genuinely empty. "

@@ -103,6 +103,7 @@ public class SpeechManager {
     if (level == Level.REQUESTED) {
       // the wearer asked. cut off whatever is being said and answer them
       lastKey = situationKey;
+      logSpoken(text, level, situationKey);
       say(text, level, now, TextToSpeech.QUEUE_FLUSH);
       return true;
     }
@@ -120,8 +121,15 @@ public class SpeechManager {
       return false;
     }
     lastKey = situationKey;
+    logSpoken(text, level, situationKey);
     say(text, level, now, TextToSpeech.QUEUE_FLUSH);
     return true;
+  }
+
+  private static final String TAG = "HelloArActivity";
+
+  private void logSpoken(String text, Level level, String key) {
+    android.util.Log.i(TAG, "EYE_SAY [" + level + "] \"" + text + "\"  key=" + key);
   }
 
   private void say(String text, Level level, long now, int queueMode) {

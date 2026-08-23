@@ -320,6 +320,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private GuardianCorridor.Reading guardianReading = null;
 
   // how far ahead the floor first comes into view, metres. large means a blind zone at your feet
+  private float cameraYawDeg = 0f;
+
   private float groundSightM = Float.NaN;
 
   // beyond this the near floor is unseen and "clear" is not a claim we are entitled to make
@@ -851,6 +853,13 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         // ARCore knows which way is down. asking it costs nothing and makes every vertical
         // measurement independent of how the phone happens to be tilted on someone's head
         camera.getPose().inverse().rotateVector(WORLD_UP, 0, upInCamera, 0);
+        // where the head is pointing in the ROOM. ARCore's world Y is up, so the compass bearing
+        // is the camera's forward axis flattened onto XZ. the absolute zero does not matter, only
+        // that it stays put while the head turns
+        float[] zAxis = camera.getPose().getZAxis();
+        cameraYawDeg = (float) Math.toDegrees(Math.atan2(-zAxis[0], -zAxis[2]));
+        guardian.gapScan().setWorldContext(
+            guardian.worldFan(), cameraYawDeg, System.currentTimeMillis());
         guardianReading =
             guardian.evaluate(
                 depthImage, camera.getImageIntrinsics(), motionBudget.speedMps(), upInCamera);
@@ -919,7 +928,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
               beamConfidence,
               camera.getImageIntrinsics(),
               upInCamera,
-              motionBudget.movedSinceLastFrameM());
+              motionBudget.movedSinceLastFrameM(),
+              cameraYawDeg);
         } catch (NotYetAvailableException e) {
           // no raw frame this tick; the grid simply gets no new evidence and decays
         }
@@ -1294,13 +1304,17 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       ApertureScan.Gap hudGap = guardian.gap();
       String raw = guardian.usingRaw() ? " \u00b7 RAW DEPTH" : "";
 
-      // one row, three segments, whichever sense currently owns the output
-      if (guardianReading.state == GuardianCorridor.State.HAZARD) {
-        updateDirection(directionOf(guardianReading.lateralMeters), COLOR_HAZARD);
-      } else if (channel == ModeArbiter.Channel.APERTURE
-          && (hudGap.fit == ApertureScan.Fit.WALK || hudGap.fit == ApertureScan.Fit.SQUEEZE)) {
+      // The bar answers one question: which way do I go.
+      //
+      // It used to light the side the OBSTACLE was on, in red, which reads as an instruction to go
+      // that way. Two meanings on one widget, and the wrong one is the one people act on. Now the
+      // route is green whenever the fan has one, and red only when there is no route at all.
+      if (hudGap.fit == ApertureScan.Fit.WALK || hudGap.fit == ApertureScan.Fit.SQUEEZE) {
         int lit = Math.abs(hudGap.bearingDeg) <= 6f ? 0 : (hudGap.bearingDeg < 0 ? -1 : 1);
         updateDirection(lit, hudGap.fit == ApertureScan.Fit.WALK ? COLOR_CLEAR : COLOR_WARN);
+      } else if (guardianReading.state == GuardianCorridor.State.HAZARD) {
+        // no way through that we can see: show where the thing is, and it is a warning not a route
+        updateDirection(directionOf(guardianReading.lateralMeters), COLOR_HAZARD);
       } else {
         updateDirection(-2, COLOR_CLEAR);
       }
@@ -1712,7 +1726,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             Locale.US,
             "EYE_VISION %s | terrain=%s dev=%.0fcm near=%d far=%d | point=%s"
                 + " | depthAge=%dms ts=%d | %s"
-                + " | objects=%d [%s] rot=%d | named=%s sight=%.1fm floorEnds=%.1fm",
+                + " | objects=%d [%s] rot=%d | named=%s sight=%.1fm floorEnds=%.1fm | %s",
             vision == null ? "n/a" : vision.diagnostics(),
             terrain.state(),
             terrain.deviationMeters() * 100,
@@ -1731,7 +1745,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             uprightDegrees(upInCamera),
             String.valueOf(hazardName) + "/" + objectMemory.diagnostics(),
             groundSightM,
-            floorEndsM));
+            floorEndsM,
+            guardian.beamDiagnostics()
+                + " "
+                + guardian.worldFan().diagnostics(cameraYawDeg, System.currentTimeMillis())));
   }
 
   /**
@@ -1948,22 +1965,21 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
           // name it when the detector can, because "chair" tells you to step round and "obstacle"
           // only tells you to stop. depth supplies the distance, colour supplies the noun
           String named = hazardName;
-          phrase =
-              String.format(
-                  Locale.UK,
-                  "%s %.1f metres, %s",
-                  named == null ? "Obstacle" : capitalise(named),
-                  rounded,
-                  side(guardianReading.lateralMeters));
-          // the noun, the half-metre band and the side. walking a chair down from four metres to
-          // one is ONE situation until one of those three actually changes
-          // naming the thing tells you to stop. naming the way round tells you what to do next,
-          // and the fan already worked it out. only appended when the thing is actually in the way
-          // and the fan is confident, or every sentence doubles in length for nothing
+          // The instruction comes first, the noun second.
+          //
+          // "Backpack two metres straight ahead, go left" makes the wearer parse a description
+          // before they are told what to do, and by then they have taken another step. Leading
+          // with the action puts the useful half first. The noun stays because "backpack" tells
+          // you to step round it and "obstacle" only tells you to stop.
           String around = wayAround(gap, guardianReading);
-          if (around != null) {
-            phrase = phrase + ". " + around;
-          }
+          String what =
+              named == null
+                  ? String.format(Locale.UK, "%.1f metres", rounded)
+                  : String.format(Locale.UK, "%s, %.1f metres", capitalise(named), rounded);
+          phrase =
+              around != null
+                  ? around + ". " + what
+                  : what + ", " + side(guardianReading.lateralMeters);
           situationKey =
               "hazard:"
                   + (named == null ? "?" : named)
@@ -2272,17 +2288,24 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     if (gap == null || reading == null) {
       return null;
     }
-    if (Math.abs(reading.lateralMeters) > 0.18f) {
-      // already off to one side, so the wearer is not walking into it
+    if (Math.abs(reading.lateralMeters) > 0.30f) {
+      // well off to one side, so the wearer was never walking into it
       return null;
     }
-    if (gap.fit != ApertureScan.Fit.WALK || gap.coverage < 0.6f) {
+    if (gap.coverage < 0.6f) {
+      return null;
+    }
+    if (gap.fit != ApertureScan.Fit.WALK && gap.fit != ApertureScan.Fit.SQUEEZE) {
+      // BLOCKED means the fan has no route to offer, and inventing one would be worse than silence
       return null;
     }
     if (Math.abs(gap.bearingDeg) < 8f) {
       return null;
     }
-    return gap.bearingDeg < 0 ? "Clear to your left" : "Clear to your right";
+    String way = gap.bearingDeg < 0 ? "left" : "right";
+    return gap.fit == ApertureScan.Fit.WALK
+        ? "Go " + way
+        : "Squeeze " + way + ", turn your shoulders";
   }
 
   private static String capitalise(String word) {

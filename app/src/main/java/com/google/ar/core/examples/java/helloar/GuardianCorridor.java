@@ -203,6 +203,15 @@ public class GuardianCorridor {
   // already converted to gravity-referenced metres - walking the depth image twice would be silly
   private final ApertureScan aperture = new ApertureScan();
   private final OccupancyBeam beam = new OccupancyBeam();
+  private final WorldFan worldFan = new WorldFan();
+
+  public ApertureScan gapScan() {
+    return aperture;
+  }
+
+  public WorldFan worldFan() {
+    return worldFan;
+  }
 
   private Blindness blindness = Blindness.NONE;
 
@@ -395,8 +404,10 @@ public class GuardianCorridor {
       Image rawConfidence,
       CameraIntrinsics intrinsics,
       float[] upInCamera,
-      float movedMetres) {
+      float movedMetres,
+      float worldYawDeg) {
     beam.beginFrame(movedMetres);
+    worldFan.advance(movedMetres, worldYawDeg);
     ShortBuffer depth =
         rawDepth.getPlanes()[0].getBuffer().order(ByteOrder.nativeOrder()).asShortBuffer();
     Image.Plane plane = rawConfidence.getPlanes()[0];
@@ -429,15 +440,19 @@ public class GuardianCorridor {
         if (ground < SELF_RANGE_M || (ground < SELF_GROUND_M && aboveCamera < SELF_HEIGHT_M)) {
           continue;
         }
-        if (pointX < -HALF_WIDTH_M || pointX > HALF_WIDTH_M) {
-          continue;
-        }
         if (aboveCamera > TOP_M || aboveCamera < bottom) {
           continue;
         }
+        boolean inCorridor = pointX >= -HALF_WIDTH_M && pointX <= HALF_WIDTH_M;
         int c = conf.get(y * confRowStride + x * confPixelStride) & 0xFF;
         float weight = (c / 255f) * (c / 255f);
-        beam.observe(ground, weight);
+        if (inCorridor) {
+          beam.observe(ground, weight);
+        }
+        // and into the room map, at its bearing in the room rather than in the picture
+        float ratio = Math.max(-1f, Math.min(1f, pointX / Math.max(ground, 0.01f)));
+        float bearing = (float) Math.toDegrees(Math.asin(ratio));
+        worldFan.observe(worldYawDeg + bearing, ground, weight, System.currentTimeMillis());
       }
     }
   }

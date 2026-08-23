@@ -1,0 +1,24 @@
+# Android Studio configuration.
+*.iml
+.idea/
+
+# Gradle configuration.
+.gradle/
+build/
+
+# User configuration.
+local.properties
+
+# OS configurations.
+.DS_Store
+
+# Android NDK cmake output.
+.cxx/
+
+# Reach: working copies kept on disk, not in history
+*.orig
+*.broken
+# unused model, superseded by efficientdet_lite2
+app/src/main/assets/efficientdet_lite0.tflite
+# agent working notes, not part of the project
+.claude/

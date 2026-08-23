@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reach. Sized for a projector across a room, not for a phone in your hand - during judging this
+     screen is mirrored to a wall and the point is that people can read what the algorithm sees
+     while the wearer feels it.
+
+     Top strip says who is driving. The direction bar says where. The card says what and how far. -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+  <android.opengl.GLSurfaceView
+      android:id="@+id/surfaceview"
+      android:layout_width="fill_parent"
+      android:layout_height="fill_parent"
+      android:layout_gravity="top"/>
+
+  <com.google.ar.core.examples.java.helloar.DetectionOverlayView
+      android:id="@+id/detection_overlay"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"/>
+
+  <TextView
+      android:id="@+id/mode_button"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_alignParentStart="true"
+      android:layout_alignParentTop="true"
+      android:layout_marginStart="20dp"
+      android:layout_marginTop="22dp"
+      android:background="@drawable/bg_mode"
+      android:paddingStart="22dp"
+      android:paddingEnd="22dp"
+      android:paddingTop="14dp"
+      android:paddingBottom="14dp"
+      android:text="SCENE"
+      android:textColor="#FFFFFF"
+      android:textSize="15sp"
+      android:textStyle="bold"
+      android:letterSpacing="0.12"
+      android:clickable="true"
+      android:focusable="true"/>
+
+  <!-- says out loud that you can talk to it, because nothing else on screen would -->
+  <TextView
+      android:id="@+id/voice_pill"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_toEndOf="@id/mode_button"
+      android:layout_alignTop="@id/mode_button"
+      android:layout_marginStart="10dp"
+      android:background="@drawable/bg_chip"
+      android:paddingStart="14dp"
+      android:paddingEnd="14dp"
+      android:paddingTop="16dp"
+      android:paddingBottom="16dp"
+      android:text="● VOICE"
+      android:textColor="#7FE08A"
+      android:textSize="12sp"
+      android:textStyle="bold"
+      android:letterSpacing="0.14"/>
+
+  <ImageButton
+      android:id="@+id/settings_button"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_alignParentEnd="true"
+      android:layout_alignParentTop="true"
+      android:layout_marginEnd="20dp"
+      android:layout_marginTop="22dp"
+      android:padding="12dp"
+      android:src="@drawable/ic_settings"
+      android:background="@drawable/bg_chip"/>
+
+  <LinearLayout
+      android:id="@+id/hud"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_alignParentBottom="true"
+      android:orientation="vertical"
+      android:background="@drawable/bg_hud"
+      android:paddingStart="26dp"
+      android:paddingEnd="26dp"
+      android:paddingTop="18dp"
+      android:paddingBottom="28dp">
+
+    <TextView
+        android:id="@+id/hud_channel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_chip"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:layout_marginBottom="14dp"
+        android:text="LISTENING"
+        android:textColor="#C8C8D0"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.14"/>
+
+    <!-- Where it is, as three lit segments. The one thing a walker acts on, and the one thing a
+         room watching a mirrored screen can read from the back. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="14dp">
+
+      <TextView
+          android:id="@+id/dir_left"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:layout_height="wrap_content"
+          android:layout_marginEnd="6dp"
+          android:background="@drawable/bg_dir"
+          android:gravity="center"
+          android:paddingTop="12dp"
+          android:paddingBottom="12dp"
+          android:text="◀ LEFT"
+          android:textColor="#4A4A55"
+          android:textSize="16sp"
+          android:textStyle="bold"
+          android:letterSpacing="0.08"/>
+
+      <TextView
+          android:id="@+id/dir_centre"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:layout_height="wrap_content"
+          android:layout_marginEnd="6dp"
+          android:background="@drawable/bg_dir"
+          android:gravity="center"
+          android:paddingTop="12dp"
+          android:paddingBottom="12dp"
+          android:text="AHEAD"
+          android:textColor="#4A4A55"
+          android:textSize="16sp"
+          android:textStyle="bold"
+          android:letterSpacing="0.08"/>
+
+      <TextView
+          android:id="@+id/dir_right"
+          android:layout_width="0dp"
+          android:layout_weight="1"
+          android:layout_height="wrap_content"
+          android:background="@drawable/bg_dir"
+          android:gravity="center"
+          android:paddingTop="12dp"
+          android:paddingBottom="12dp"
+          android:text="RIGHT ▶"
+          android:textColor="#4A4A55"
+          android:textSize="16sp"
+          android:textStyle="bold"
+          android:letterSpacing="0.08"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/hud_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="STARTING"
+        android:textSize="48sp"
+        android:textStyle="bold"
+        android:letterSpacing="-0.03"
+        android:maxLines="2"
+        android:textColor="#FFFFFF"/>
+
+    <TextView
+        android:id="@+id/hud_detail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="waiting for ARCore"
+        android:textSize="15sp"
+        android:lineSpacingExtra="2dp"
+        android:textColor="#9A9AA6"/>
+  </LinearLayout>
+
+</RelativeLayout>

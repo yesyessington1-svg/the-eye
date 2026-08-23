@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The HUD sits over a live camera feed, so it needs its own ground or the text disappears into
+     whatever the room happens to be. Near-black rather than pure black: pure black reads as a
+     dead region of screen when it is projected. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+  <solid android:color="#F00B0B0F"/>
+  <corners android:topLeftRadius="28dp" android:topRightRadius="28dp"/>
+</shape>

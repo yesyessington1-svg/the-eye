@@ -1,5 +1,5 @@
 /*
- * Reach - spoken control.
+ * The Eye - spoken control.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 
@@ -28,7 +28,7 @@ import java.util.Locale;
  */
 public class VoiceCommands {
 
-  private static final String TAG = "ReachVoice";
+  private static final String TAG = "EyeVoice";
 
   public enum Command {
     MODE_SCENE,
@@ -98,7 +98,7 @@ public class VoiceCommands {
       return;
     }
     if (!isAvailable()) {
-      Log.w(TAG, "REACH_VOICE no recogniser on this device");
+      Log.w(TAG, "EYE_VOICE no recogniser on this device");
       return;
     }
     recognizer = SpeechRecognizer.createSpeechRecognizer(context);
@@ -170,10 +170,10 @@ public class VoiceCommands {
           recognizer.startListening(intent);
           if (!announcedListening) {
             announcedListening = true;
-            Log.i(TAG, "REACH_VOICE listening");
+            Log.i(TAG, "EYE_VOICE listening");
           }
         } catch (Exception e) {
-          Log.w(TAG, "REACH_VOICE could not start", e);
+          Log.w(TAG, "EYE_VOICE could not start", e);
         }
       };
 
@@ -191,7 +191,7 @@ public class VoiceCommands {
       for (int i = 0; i < KEYWORDS.length; i++) {
         for (String word : KEYWORDS[i]) {
           if (lower.contains(word)) {
-            Log.i(TAG, "REACH_VOICE heard \"" + phrase + "\" -> " + BY_INDEX[i]);
+            Log.i(TAG, "EYE_VOICE heard \"" + phrase + "\" -> " + BY_INDEX[i]);
             lastFiredMs = System.currentTimeMillis();
             listener.onCommand(BY_INDEX[i]);
             return;
@@ -199,7 +199,7 @@ public class VoiceCommands {
         }
       }
     }
-    Log.i(TAG, "REACH_VOICE heard \"" + heard.get(0) + "\" -> no match");
+    Log.i(TAG, "EYE_VOICE heard \"" + heard.get(0) + "\" -> no match");
   }
 
   private final class Handler implements RecognitionListener {
@@ -215,7 +215,7 @@ public class VoiceCommands {
       // says anything, which is most of the time. everything else is worth seeing in a log
       if (error != SpeechRecognizer.ERROR_NO_MATCH
           && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-        Log.w(TAG, "REACH_VOICE error " + error);
+        Log.w(TAG, "EYE_VOICE error " + error);
       }
       listen();
     }
@@ -232,7 +232,7 @@ public class VoiceCommands {
 
     @Override
     public void onBeginningOfSpeech() {
-      Log.i(TAG, "REACH_VOICE hearing something");
+      Log.i(TAG, "EYE_VOICE hearing something");
     }
 
     @Override

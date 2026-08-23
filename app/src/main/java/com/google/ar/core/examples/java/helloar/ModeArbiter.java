@@ -1,5 +1,5 @@
 /*
- * Reach - which sense is allowed to speak.
+ * The Eye - which sense is allowed to speak.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

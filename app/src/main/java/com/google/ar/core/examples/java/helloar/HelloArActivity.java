@@ -197,6 +197,13 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private boolean saidSensorDown = false;
   private volatile String fallbackAnswer = null;
   private long fallbackAnswerMs = 0;
+
+  // how long a backup answer stands in for the depth sensor. matches the HUD's own window
+  private static final long FALLBACK_FRESH_MS = 7000;
+
+  // how long the backup channel gets before we give up and say we are blind. covers the 1.5s
+  // trigger delay plus a slow round trip
+  private static final long FALLBACK_GRACE_MS = 5000;
   private boolean caneShowing = false;
   private final float[] boxImageCoords = new float[64];
   private final float[] boxViewCoords = new float[64];
@@ -324,7 +331,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final float[] boxCentre = new float[2];
   private final float[] boxCentreTex = new float[2];
 
-  // Reach bring-up instrumentation. Throttled to ~1 Hz so it can stay on during testing without
+  // The Eye bring-up instrumentation. Throttled to ~1 Hz so it can stay on during testing without
   // drowning logcat or costing frames
   private long lastDepthLogMs = 0;
   private final float[] lastTranslation = new float[3];
@@ -410,6 +417,16 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     dirLeft = findViewById(R.id.dir_left);
     dirCentre = findViewById(R.id.dir_centre);
     dirRight = findViewById(R.id.dir_right);
+    // the menu says which mode to open in; launched any other way we keep the arbiter's default
+    String requested = getIntent() == null ? null : getIntent().getStringExtra(MenuActivity.EXTRA_MODE);
+    if (requested != null) {
+      try {
+        modes.setMode(ModeArbiter.Mode.valueOf(requested));
+      } catch (IllegalArgumentException e) {
+        // an unknown name is not worth crashing over
+      }
+    }
+
     voice = new VoiceCommands(this, this::onVoiceCommand);
     recorder = new SessionRecorder(this, System.currentTimeMillis());
 
@@ -1029,7 +1046,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                   fallbackAnswer = text;
                   fallbackAnswerMs = System.currentTimeMillis();
                   // spoken at the level of a real hazard, because that is what it may be reporting
-                  speech.announce(SpeechManager.Level.HIGH, "Backup vision. " + text);
+                  speech.announce(SpeechManager.Level.HIGH, spokenFallback(text));
                 });
           } catch (NotYetAvailableException e) {
             // no camera image this frame either; try again on the next window
@@ -1318,7 +1335,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
 
-    // the sample drew placed pawns, detected planes and the feature point cloud here. Reach draws
+    // the sample drew placed pawns, detected planes and the feature point cloud here. The Eye draws
     // none of it: planes and pawns are things we never use, and the point cloud made the mirrored
     // demo screen look busy in a way that hid the one number that matters. camera image plus HUD
   }
@@ -1532,7 +1549,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         TAG,
         String.format(
             Locale.US,
-            "REACH_DEPTH %s%dx%d | centre min=%s p05=%s | frame min=%s"
+            "EYE_DEPTH %s%dx%d | centre min=%s p05=%s | frame min=%s"
                 + " | centre dist[<0.4|0.4-0.7|0.7-1.2|1.2-2.5|>2.5]=%d/%d/%d/%d/%d%%"
                 + " | moved=%s | %s",
             guardianReading == null
@@ -1575,7 +1592,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         TAG,
         String.format(
             Locale.US,
-            "REACH_GAP %s w=%.2fm bear=%+.1f ahead=%.2fm cov=%.0f%% edge=%b floor=%.2fm | fan[%s]",
+            "EYE_GAP %s w=%.2fm bear=%+.1f ahead=%.2fm cov=%.0f%% edge=%b floor=%.2fm | fan[%s]",
             g.fit,
             g.widthM,
             g.bearingDeg,
@@ -1589,7 +1606,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         TAG,
         String.format(
             Locale.US,
-            "REACH_VISION %s | terrain=%s dev=%.0fcm near=%d far=%d | point=%s"
+            "EYE_VISION %s | terrain=%s dev=%.0fcm near=%d far=%d | point=%s"
                 + " | depthAge=%dms ts=%d | %s"
                 + " | objects=%d [%s] rot=%d | named=%s sight=%.1fm floorEnds=%.1fm",
             vision == null ? "n/a" : vision.diagnostics(),
@@ -1721,7 +1738,23 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // the advice or the admission is decorative. This is the sentence no other system in this space
     // says out loud, and it names the cause so the wearer knows what to do about it
     if (cannotSee) {
-      speech.announce(SpeechManager.Level.HIGH, blindnessPhrase(guardian.blindness()));
+      // "I cannot see" is the last thing to say, not the first.
+      //
+      // The backup channel needs about a second and a half to trigger and then a network round
+      // trip, and announceSituation runs every frame in between. Left alone it announces blindness
+      // first, every single time, and the useful answer arrives afterwards on top of it. So the
+      // sentence is held back while the backup is still trying, and only spoken if that comes back
+      // with nothing. Vibration carries the hazard throughout, so the wearer is not left with
+      // nothing while we wait.
+      long nowMs = System.currentTimeMillis();
+      boolean answerFresh = fallbackAnswer != null && nowMs - fallbackAnswerMs < FALLBACK_FRESH_MS;
+      boolean backupStillTrying =
+          describer.isConfigured()
+              && (describer.isBusy()
+                  || (blindSinceMs != 0 && nowMs - blindSinceMs < FALLBACK_GRACE_MS));
+      if (!answerFresh && !backupStillTrying) {
+        speech.announce(SpeechManager.Level.HIGH, blindnessPhrase(guardian.blindness()));
+      }
       return;
     }
 
@@ -1849,7 +1882,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       for (CameraConfig config : configs) {
         int w = config.getImageSize().getWidth();
         int h = config.getImageSize().getHeight();
-        Log.i(TAG, "REACH_CAMERA option cpu=" + w + "x" + h
+        Log.i(TAG, "EYE_CAMERA option cpu=" + w + "x" + h
             + " gpu=" + config.getTextureSize().getWidth() + "x"
             + config.getTextureSize().getHeight()
             + " fps=" + config.getFpsRange() + " depth=" + config.getDepthSensorUsage());
@@ -1866,7 +1899,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       }
       if (best != null) {
         session.setCameraConfig(best);
-        Log.i(TAG, "REACH_CAMERA chose cpu image " + best.getImageSize().getWidth() + "x"
+        Log.i(TAG, "EYE_CAMERA chose cpu image " + best.getImageSize().getWidth() + "x"
             + best.getImageSize().getHeight() + " of " + configs.size() + " configs");
       }
     } catch (Exception e) {
@@ -2005,6 +2038,41 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return false;
     }
     return gap.clearAheadM - floorEndsM > FLOOR_RUNOUT_M;
+  }
+
+  /**
+   * Turns the backup model's closed-set answer into something a person would say.
+   *
+   * <p>The model replies in a fixed vocabulary so the app can act on it: CLEAR, OBSTACLE chair,
+   * PERSON, STAIRS, DROP, DOORWAY. Reading that out verbatim gives you "backup vision, obstacle
+   * chair", which is a protocol, not a warning.
+   */
+  private static String spokenFallback(String answer) {
+    if (answer == null || answer.trim().isEmpty()) {
+      return "Backup vision cannot tell";
+    }
+    String text = answer.trim();
+    String upper = text.toUpperCase(Locale.UK);
+    if (upper.startsWith("CLEAR")) {
+      return "Clear ahead";
+    }
+    if (upper.startsWith("PERSON")) {
+      return "Person ahead";
+    }
+    if (upper.startsWith("STAIRS")) {
+      return "Stairs ahead";
+    }
+    if (upper.startsWith("DROP")) {
+      return "Drop ahead, stop";
+    }
+    if (upper.startsWith("DOORWAY")) {
+      return "Doorway ahead";
+    }
+    if (upper.startsWith("OBSTACLE")) {
+      String what = text.substring("OBSTACLE".length()).trim();
+      return what.isEmpty() ? "Obstacle ahead" : capitalise(what) + " ahead";
+    }
+    return text;
   }
 
   private static String capitalise(String word) {

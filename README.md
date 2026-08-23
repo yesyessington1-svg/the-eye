@@ -1,10 +1,10 @@
-# Reach
+# The Eye
 
 **A phone worn at chest or head height that turns depth into speech and vibration, so a blind or
 low-vision walker can tell whether the space ahead is passable.**
 
 Not a white cane replacement. A cane finds what is at your feet, one pace ahead, by touching it.
-Reach answers a different question: what is between here and the far side of the room, do I fit
+The Eye answers a different question: what is between here and the far side of the room, do I fit
 through it, and it says out loud when it cannot answer.
 
 ---

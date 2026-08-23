@@ -35,7 +35,7 @@ Appended as we go. Not cleaned up afterwards - the mess is the point.
  emulator and installed there. Samsung Auto Blocker then refused the reconnection until the
  phone was unlocked first
 20:1x GuardianCorridor + HapticEngine written and wired in. not yet run on device
-20:4x stripped the sample: no pawns, no plane grid, no point cloud, app renamed Reach, HUD sized
+20:4x stripped the sample: no pawns, no plane grid, no point cloud, app renamed The Eye, HUD sized
  for a projector instead of a one-line snackbar
 20:5x broke the build badly - a text replacement anchored on "String message = null;" matched the
  copy in onResume instead of onDrawFrame and deleted four methods. rebuilt them from the

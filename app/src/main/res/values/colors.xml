@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- one palette for the whole app. near-black rather than pure black so the cards have something
+     to sit on, and exactly one accent so nothing competes with the hazard colour -->
+<resources>
+  <color name="bg">#09090B</color>
+  <color name="surface">#131316</color>
+  <color name="surface_high">#1B1B20</color>
+  <color name="border">#26262D</color>
+  <color name="text">#FAFAFA</color>
+  <color name="text_muted">#8B8B96</color>
+  <color name="accent">#7FE08A</color>
+  <color name="accent_dim">#2A4231</color>
+  <color name="hazard">#FF5C4D</color>
+  <color name="warn">#FFC24A</color>
+</resources>

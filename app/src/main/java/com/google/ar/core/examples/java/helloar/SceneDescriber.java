@@ -1,5 +1,5 @@
 /*
- * Reach - scene description for the portal gesture.
+ * The Eye - scene description for the portal gesture.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 
@@ -27,7 +27,7 @@ import org.json.JSONObject;
 /**
  * Depth tells you how far; this tells you what.
  *
- * <p>The only part of Reach that leaves the device, so it sits off the safety path -
+ * <p>The only part of The Eye that leaves the device, so it sits off the safety path -
  * nothing here can stop you walking into anything. It answers a question the wearer chose to ask.
  *
  * <p>Hand-rolled HTTP rather than a vendor SDK: those are built for servers and drag desugaring,
@@ -35,7 +35,7 @@ import org.json.JSONObject;
  */
 public class SceneDescriber {
 
-  private static final String TAG = "ReachDescriber";
+  private static final String TAG = "EyeDescriber";
   private static final String ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
   // small vision model. the user is standing still waiting for this, so latency is the

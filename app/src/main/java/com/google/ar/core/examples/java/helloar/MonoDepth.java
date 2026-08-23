@@ -1,5 +1,5 @@
 /*
- * Reach - learned depth, for everywhere ARCore has none.
+ * The Eye - learned depth, for everywhere ARCore has none.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

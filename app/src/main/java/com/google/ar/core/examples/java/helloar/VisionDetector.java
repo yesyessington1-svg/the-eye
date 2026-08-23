@@ -1,5 +1,5 @@
 /*
- * Reach - camera-side detection: the shutter gesture, and people depth can't see.
+ * The Eye - camera-side detection: the shutter gesture, and people depth can't see.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 
@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Everything Reach reads out of the colour image: the shutter gesture, and objects.
+ * Everything The Eye reads out of the colour image: the shutter gesture, and objects.
  *
  * <p>The L gesture is only a trigger, not a viewfinder - someone who cannot see the frame cannot
  * aim it, and a forehead-mounted phone has no reachable button.

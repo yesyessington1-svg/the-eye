@@ -1,4 +1,4 @@
-# How Reach works
+# How The Eye works
 
 Written for someone who does not write Android code. Every file named here is real.
 
@@ -9,14 +9,14 @@ knows the difference between "nothing is there" and "I can't see".
 
 ## Two different pictures, thirty times a second
 
-ARCore gives the app two things from the same camera, and Reach uses them for different jobs.
+ARCore gives the app two things from the same camera, and The Eye uses them for different jobs.
 
 **The depth picture** is 160x90 - tiny - and every one of those 14,400 pixels carries a distance in
 millimetres. This is the safety sense. Nothing about it involves recognising objects: a hanging sign
 and a tree branch are the same thing to it, which is the point, because dangerous objects are not in
 any dataset.
 
-**The colour picture** is 640x480, an ordinary camera image. Reach only looks at it a few times a
+**The colour picture** is 640x480, an ordinary camera image. The Eye only looks at it a few times a
 second, for two things a distance map cannot do: notice the wearer's hand making a gesture, and
 notice a person.
 
@@ -29,7 +29,7 @@ notice a person.
  below, from 0.60 m to 2.00 m ahead. The floor sits below that box, which is why the floor never
  triggers an alarm.
 
- *This step is the whole idea.* Every other system reports the nearest object in view. Reach
+ *This step is the whole idea.* Every other system reports the nearest object in view. The Eye
  reports the nearest object that is going to hit you.
 3. **Take the 5th percentile, not the nearest point.** On a static scene the single nearest pixel
  wandered between 0.90 m and 1.49 m, and in one frame it sat a full metre in front of the real
@@ -59,7 +59,7 @@ moves, which means the picture quality depends on how the wearer moves: standing
 coverage and almost no confidence; walking gives 95% and half the pixels confident. From cold it
 produced nothing at all for eleven seconds until the phone had travelled about 12 cm.
 
-So when Reach is losing the picture *and* the wearer has gone still, it says so and asks them to
+So when The Eye is losing the picture *and* the wearer has gone still, it says so and asks them to
 sway. A white cane works because the user sweeps it. Same bargain, different sense. As far as we can
 tell nothing else does this, because nothing else has a sensor that needs the user's body to work.
 
@@ -68,7 +68,7 @@ tell nothing else does this, because nothing else has a sensor that needs the us
 MediaPipe is Google's on-device vision library. It runs two models here, on one worker thread,
 against the same converted frame, entirely offline.
 
-**Hand Landmarker** finds 21 points on a hand. Reach uses two of them - the thumb tip and the index
+**Hand Landmarker** finds 21 points on a hand. The Eye uses two of them - the thumb tip and the index
 tip. Held apart like an L for about a second, that is the shutter: it means "tell me what's ahead".
 It is a gesture rather than a button because the phone is meant to be strapped to a forehead, where
 there is no button to reach.
@@ -76,7 +76,7 @@ there is no button to reach.
 **Object Detector**, filtered to one class out of eighty: `person`. This is the second sensor, and
 it exists because of a measurement. Depth-from-motion is blind to exactly the obstacles that move - 
 a hand at 45 cm was invisible, and a person froze the whole stream. When depth says the corridor is
-clear and the colour picture says there is a person standing in it, Reach believes the one that can
+clear and the colour picture says there is a person standing in it, The Eye believes the one that can
 see people.
 
 We did not pick person detection because recognising things is impressive. We picked it because we
@@ -87,7 +87,7 @@ measured the hole and this fills it.
 The shutter gesture sends the current camera frame to a vision model and speaks one short sentence
 back through the phone's own text-to-speech.
 
-This is the only part of Reach that leaves the device, and it is deliberately off the safety path.
+This is the only part of The Eye that leaves the device, and it is deliberately off the safety path.
 Nothing here can stop you walking into anything. If the network is gone it says so out loud, because
 silence would read as "nothing there" - the same lie the rest of the system is built to avoid.
 
@@ -100,5 +100,5 @@ the range of, then a step up, then an admission that we cannot see.
 Three rhythms, not fifteen. Guardian is a double tap whose rate climbs as the obstacle nears.
 Terrain is long-short-long. Blindness is one long buzz. The 2014 stereo-camera virtual cane encoded
 distance as three *frequencies* - 10, 100 and 600 Hz - using dedicated actuators on the finger and
-wrist. A phone motor cannot do that, so Reach encodes in rhythm and rate instead. That is not a
+wrist. A phone motor cannot do that, so The Eye encodes in rhythm and rate instead. That is not a
 shortcut; it is the adaptation commodity hardware forces.

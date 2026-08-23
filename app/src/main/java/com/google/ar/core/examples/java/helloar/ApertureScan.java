@@ -1,5 +1,5 @@
 /*
- * Reach - aperture scan: free-space encoding.
+ * The Eye - aperture scan: free-space encoding.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

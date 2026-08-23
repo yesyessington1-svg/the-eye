@@ -36,7 +36,7 @@ is not.
 
 ## We measured ARCore's depth before designing against it
 
-**What we did.** Before writing any Reach code we instrumented Google's sample to dump depth
+**What we did.** Before writing any The Eye code we instrumented Google's sample to dump depth
 image size, valid-pixel coverage, raw-depth confidence and device motion to logcat at 1 Hz, then
 ran four scripted tests. Results in `REACH-MEASUREMENTS.md`.
 

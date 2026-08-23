@@ -15,12 +15,12 @@
    limitations under the License.
 -->
 <resources>
-  <string translatable="false" name="app_name">Reach</string>
+  <string translatable="false" name="app_name">The Eye</string>
   <string translatable="false" name="depth_use_explanation">When Depth is enabled on supported devices, virtual objects adapt to the environment by blending in with the real world.</string>
   <string translatable="false" name="button_text_enable_depth">Enable</string>
   <string translatable="false" name="button_text_disable_depth">Disable</string>
-  <string translatable="false" name="options_title_with_depth">Reach settings</string>
-  <string translatable="false" name="options_title_without_depth">This device has no ARCore depth - Reach cannot run</string>
+  <string translatable="false" name="options_title_with_depth">The Eye settings</string>
+  <string translatable="false" name="options_title_without_depth">This device has no ARCore depth - The Eye cannot run</string>
   <string translatable="false" name="done">Done</string>
   <string-array translatable="false" name="depth_options_array">
     <item>Guardian depth sensing</item>

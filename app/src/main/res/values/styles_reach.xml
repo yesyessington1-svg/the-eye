@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- one place for the row rhythm, so four rows cannot drift apart by hand-editing -->
+<resources>
+  <style name="Hairline">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">1dp</item>
+    <item name="android:background">@color/border</item>
+  </style>
+
+  <style name="ModeRow">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:orientation">horizontal</item>
+    <item name="android:paddingTop">22dp</item>
+    <item name="android:paddingBottom">22dp</item>
+    <item name="android:gravity">center_vertical</item>
+    <item name="android:clickable">true</item>
+    <item name="android:focusable">true</item>
+  </style>
+
+  <!-- the only thing marking the selected row. no icon, no dot, no box -->
+  <style name="ModeBar">
+    <item name="android:layout_width">2dp</item>
+    <item name="android:layout_height">38dp</item>
+    <item name="android:layout_marginEnd">18dp</item>
+    <item name="android:background">@color/accent</item>
+  </style>
+
+  <style name="ModeText">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:orientation">vertical</item>
+  </style>
+
+  <style name="ModeTitle">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:textSize">21sp</item>
+    <item name="android:textStyle">bold</item>
+    <item name="android:letterSpacing">-0.02</item>
+    <item name="android:textColor">@color/text</item>
+  </style>
+
+  <style name="ModeBody">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:layout_marginTop">4dp</item>
+    <item name="android:textSize">14sp</item>
+    <item name="android:lineSpacingExtra">3dp</item>
+    <item name="android:textColor">@color/text_muted</item>
+  </style>
+</resources>

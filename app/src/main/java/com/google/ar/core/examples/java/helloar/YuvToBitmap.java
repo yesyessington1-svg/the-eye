@@ -1,5 +1,5 @@
 /*
- * Reach - camera image conversion for MediaPipe.
+ * The Eye - camera image conversion for MediaPipe.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

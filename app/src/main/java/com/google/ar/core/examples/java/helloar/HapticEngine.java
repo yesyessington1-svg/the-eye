@@ -1,5 +1,5 @@
 /*
- * Reach - haptic output.
+ * The Eye - haptic output.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

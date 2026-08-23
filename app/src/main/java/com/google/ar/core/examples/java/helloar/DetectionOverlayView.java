@@ -1,5 +1,5 @@
 /*
- * Reach - what the detectors see, drawn over the camera view.
+ * The Eye - what the detectors see, drawn over the camera view.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

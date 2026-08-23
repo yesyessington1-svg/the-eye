@@ -1,5 +1,5 @@
 /*
- * Reach - ground level changes.
+ * The Eye - ground level changes.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 

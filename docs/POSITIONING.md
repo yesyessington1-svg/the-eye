@@ -1,4 +1,4 @@
-# What Reach actually claims, and against what
+# What The Eye actually claims, and against what
 
 Written after reading the field rather than guessing at it. Every claim below is either something
 we measured on our own device or something published that we can point at.
@@ -12,7 +12,7 @@ hallucinations and leave users unaware of risks". Its prescription is that "unce
 systematically trigger safety-oriented behaviour, including requesting additional context,
 proposing safer alternatives, pausing, or declining to act".
 
-That is a description of Reach's state machine, written by someone else, before we built it.
+That is a description of The Eye's state machine, written by someone else, before we built it.
 
 - **declining to act** -> `BLIND` when the near samples disagree with each other
 - **pausing** -> `STALE` when ARCore hands us the same depth frame twice
@@ -46,9 +46,9 @@ From the O&M literature: "subtle cues from cane tips provide a powerful incentiv
 pedestrians to eschew electronic travel aids". The cane is not a crude tool people tolerate until
 something better arrives. It is high-bandwidth, zero-latency, and never lies.
 
-An aid that competes with the cane loses. Reach is scoped to what a cane physically cannot reach:
+An aid that competes with the cane loses. The Eye is scoped to what a cane physically cannot reach:
 
-| | Long cane | Reach |
+| | Long cane | The Eye |
 |---|---|---|
 | Ground within a pace | excellent, tactile, exact | ignores it deliberately |
 | Head and torso height | nothing at all | Guardian |

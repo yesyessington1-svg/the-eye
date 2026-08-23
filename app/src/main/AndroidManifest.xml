@@ -26,11 +26,11 @@
       <action android:name="android.speech.RecognitionService"/>
     </intent>
   </queries>
-  <!-- Reach: Guardian is a haptic warning system, vibration is the only output it has -->
+  <!-- The Eye: Guardian is a haptic warning system, vibration is the only output it has -->
   <uses-permission android:name="android.permission.VIBRATE"/>
   <!-- only the portal's scene description leaves the device. Guardian is entirely offline -->
   <uses-permission android:name="android.permission.INTERNET"/>
-  <!-- Reach: spoken commands, so nothing needs a button found on a screen -->
+  <!-- The Eye: spoken commands, so nothing needs a button found on a screen -->
   <uses-permission android:name="android.permission.RECORD_AUDIO"/>
   <!-- Required to post notifications for Android T+ devices -->
 
@@ -54,16 +54,22 @@
       tools:ignore="GoogleAppIndexingWarning">
 
     <activity
-        android:name="com.google.ar.core.examples.java.helloar.HelloArActivity"
-        android:configChanges="orientation|screenSize"
+        android:name="com.google.ar.core.examples.java.helloar.MenuActivity"
         android:exported="true"
         android:theme="@style/Theme.AppCompat.NoActionBar"
-        android:screenOrientation="locked">
+        android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
     </activity>
+
+    <activity
+        android:name="com.google.ar.core.examples.java.helloar.HelloArActivity"
+        android:configChanges="orientation|screenSize"
+        android:exported="false"
+        android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:screenOrientation="locked"/>
     <!-- Indicates whether "Google Play Services for AR" (ARCore) is "required" or "optional". -->
     <meta-data android:name="com.google.ar.core" android:value="required" />
   </application>

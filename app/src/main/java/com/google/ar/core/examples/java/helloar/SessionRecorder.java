@@ -1,5 +1,5 @@
 /*
- * Reach - session recording, for looking at afterwards.
+ * The Eye - session recording, for looking at afterwards.
  * Built on Google's hello_ar_java sample (Apache 2.0).
  */
 
@@ -25,7 +25,7 @@ import java.util.Locale;
  */
 public class SessionRecorder {
 
-  private static final String TAG = "ReachRecorder";
+  private static final String TAG = "EyeRecorder";
 
   private static final String HEADER =
       "ms,mode,channel,state,distance_m,lateral_m,direction,label,"
@@ -52,7 +52,7 @@ public class SessionRecorder {
       writer = new BufferedWriter(new FileWriter(file));
       writer.write(HEADER);
       writer.newLine();
-      Log.i(TAG, "REACH_RECORD writing " + file.getAbsolutePath());
+      Log.i(TAG, "EYE_RECORD writing " + file.getAbsolutePath());
     } catch (IOException e) {
       Log.w(TAG, "could not open session file", e);
       writer = null;
@@ -119,7 +119,7 @@ public class SessionRecorder {
     try {
       writer.flush();
       writer.close();
-      Log.i(TAG, "REACH_RECORD closed " + path());
+      Log.i(TAG, "EYE_RECORD closed " + path());
     } catch (IOException e) {
       Log.w(TAG, "could not close session file", e);
     }

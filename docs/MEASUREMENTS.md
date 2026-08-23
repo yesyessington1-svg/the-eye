@@ -1,8 +1,8 @@
-# Reach - masuratori de bring-up (ARCore depth pe Galaxy S25 Ultra)
+# The Eye - masuratori de bring-up (ARCore depth pe Galaxy S25 Ultra)
 
 Device: Samsung SM-S938B (S25 Ultra), Android 16 / API 36, **fara senzor ToF**.
 ARCore: Google Play Services for AR 1.55. Sample: hello_ar_java, ARCore client 1.54.
-Toate cifrele vin din logcat (`REACH_DEPTH`), nu din impresii vizuale.
+Toate cifrele vin din logcat (`EYE_DEPTH`), nu din impresii vizuale.
 
 ## Fapte stabilite
 

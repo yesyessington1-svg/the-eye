@@ -356,6 +356,19 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   // and only worth asking while the wearer is slow enough for the answer to still apply
   private static final float NAME_ASK_MAX_MPS = 0.9f;
   private static final long ASKED_NAME_FRESH_MS = 6000;
+
+  // Words that are true and useless as the name of the thing in your way.
+  //
+  // "Go left. Floor, 1.5 metres" was the most common line in a logged run - the model answered the
+  // question honestly, because the floor IS the nearest surface when the phone is tilted down. It
+  // is not what the wearer is about to walk into. The image-quality words are there because the
+  // model volunteered "blurry image ahead" despite being told not to mention the photograph.
+  private static final java.util.Set<String> NOT_AN_OBSTACLE =
+      new java.util.HashSet<>(
+          java.util.Arrays.asList(
+              "floor", "ground", "carpet", "rug", "tile", "tiles", "flooring", "unknown",
+              "ceiling", "blurry image", "blurry", "image", "photo", "picture", "dark",
+              "unclear", "nothing", "none", "blur"));
   private final float[] boxCentre = new float[2];
   private final float[] boxCentreTex = new float[2];
 
@@ -905,7 +918,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                 "",
                 text -> {
                   String word = text == null ? "" : text.trim().toLowerCase(Locale.UK);
-                  if (!word.isEmpty() && !word.startsWith("unknown") && word.length() < 24) {
+                  if (!word.isEmpty()
+                      && word.length() < 24
+                      && !NOT_AN_OBSTACLE.contains(word)) {
                     askedName = word;
                     askedNameMs = System.currentTimeMillis();
                     Log.i(TAG, "EYE_NAME model called it \"" + word + "\"");
@@ -1869,10 +1884,18 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             || guardian.beamSupportAt(guardianReading.distanceMeters) > BEAM_MIN_SUPPORT;
     if (imminent && motionBudget.speedMps() >= WALKING_MPS && evidenceBacked) {
       float rounded = Math.round(guardianReading.distanceMeters * 2f) / 2f;
+      // "Stop" on its own leaves the wearer standing there with the same question they had a step
+      // ago. The moment they stop is exactly when a direction is worth the most, and the fan has
+      // already worked one out - it was just being thrown away by the early return.
+      String out = wayAround(guardian.gap(), guardianReading);
+      String stopLine =
+          out == null
+              ? String.format(
+                  Locale.UK, "Stop. %.1f metres, %s", rounded,
+                  side(guardianReading.lateralMeters))
+              : String.format(Locale.UK, "Stop. %.1f metres. %s", rounded, out);
       speech.announce(
-          SpeechManager.Level.CRITICAL,
-          String.format(
-              Locale.UK, "Stop. %.1f metres, %s", rounded, side(guardianReading.lateralMeters)),
+          SpeechManager.Level.CRITICAL, stopLine,
           "stop:" + side(guardianReading.lateralMeters));
       return;
     }
@@ -2351,9 +2374,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
           Coordinates2d.IMAGE_NORMALIZED, boxCentre, Coordinates2d.TEXTURE_NORMALIZED,
           boxCentreTex);
       float metres = sampleDepth(depthImage, boxCentreTex[0], boxCentreTex[1]);
-      // sideways offset from the middle of the picture, scaled to metres at that distance. rough,
-      // and only used to reject a track sitting on the opposite side of the corridor
-      float lateral = Float.isNaN(metres) ? 0f : (boxCentre[0] - 0.5f) * metres;
+      // sideways offset from the middle of the picture, in metres at that distance.
+      // the 1.27 is 2*tan(hfov/2) for a 65 degree camera: without it this under-reported every
+      // offset by a quarter, and the name lookup then rejected the track as being somewhere else
+      float lateral = Float.isNaN(metres) ? 0f : (boxCentre[0] - 0.5f) * 1.27f * metres;
       float share =
           Math.abs((boxes[i * 4 + 2] - boxes[i * 4]) * (boxes[i * 4 + 3] - boxes[i * 4 + 1]));
       objectMemory.observe(

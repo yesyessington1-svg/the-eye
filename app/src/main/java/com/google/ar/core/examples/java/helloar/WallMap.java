@@ -115,9 +115,14 @@ public class WallMap {
         if (t < MIN_M || t > MAX_M || t >= nearest) {
           continue;
         }
-        // the plane is infinite, the wall is not: only count a hit inside the fitted polygon
+        // The plane is infinite, the wall is not, so the hit has to land on the fitted patch.
+        //
+        // isPoseInPolygon was too strict: a logged run tracked 1 to 4 walls on 47 frames and
+        // blocked a bearing on 4 of them. ARCore fits vertical planes as small ragged patches and
+        // grows them slowly, so an exact polygon test rejects hits on wall that is plainly there.
+        // The rectangular extent is the looser bound and is what this needs.
         Pose hit = Pose.makeTranslation(cx + dx * t, centre.ty(), cz + dz * t);
-        if (!plane.isPoseInPolygon(hit)) {
+        if (!plane.isPoseInExtents(hit)) {
           continue;
         }
         nearest = t;

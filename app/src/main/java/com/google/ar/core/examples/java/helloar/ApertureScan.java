@@ -62,9 +62,14 @@ public class ApertureScan {
   // them, so the wearer was never offered a way round anything.
   private static final float ROUTING_MIN_M = 0.60f;
 
-  // what an unlit, untextured, unseen bearing is worth as a route: enough to walk into but not
-  // enough to be chosen over somewhere we can actually see
-  private static final float UNKNOWN_DISTANCE_M = 1.20f;
+  // What a bearing with no returns at all is worth as a route: nothing.
+  //
+  // The smallest `need` this can ever be compared against is ROUTING_MIN_M + OPEN_MARGIN_M = 1.20,
+  // so anything at or above that would sometimes pass and sometimes not. A banner in front and a
+  // wall to the left leave an unseen wedge between them, and at 1.20 the fan called that wedge a
+  // route and sent the wearer into the wall. Below the floor of `need`, an unseen bearing can
+  // never be recommended, which is the only safe reading of no evidence.
+  private static final float UNKNOWN_DISTANCE_M = 0.80f;
   private static final float MAX_RANGE_M = 4.00f;
 
   // open = reaches this much past the nearest barrier. relative, not absolute: a fixed 2m
@@ -267,7 +272,16 @@ public class ApertureScan {
     if (d >= MAX_RANGE_M && world != null) {
       // nothing in this frame, but the room map may remember it from when the head was turned.
       // this is what widens the usable fan past the 65 degrees the sensor can see at any instant
-      float remembered = world.freeDistanceAt(worldYawOfBin(bin), worldNowMs);
+      // averaged across the neighbouring room sectors. the room map is 3 degrees per sector and
+      // the fan is 1.5, so without this a small head turn steps the remembered value and the
+      // chosen heading jumps with it
+      float yaw = worldYawOfBin(bin);
+      float remembered =
+          Math.min(
+              world.freeDistanceAt(yaw, worldNowMs),
+              Math.min(
+                  world.freeDistanceAt(yaw - 1.5f, worldNowMs),
+                  world.freeDistanceAt(yaw + 1.5f, worldNowMs)));
       if (remembered < d) {
         d = remembered;
       }
@@ -369,6 +383,12 @@ public class ApertureScan {
    * still jumped 15 degrees on 30% of frames.
    */
   private float chosenWorldYaw = Float.NaN;
+
+  private int blockedRun = 0;
+
+  // how many consecutive frames without a route before we forget the last one. BLOCKED flickers
+  // in clutter, and a flicker is not the same as arriving at a dead end
+  private static final int FORGET_ROUTE_AFTER = 6;
 
   private WorldFan world = null;
   private float cameraYawDeg = 0f;
@@ -572,7 +592,7 @@ public class ApertureScan {
       Arrays.sort(w);
       bearing = b[historyCount / 2];
       width = w[historyCount / 2];
-    } else {
+    } else if (blockedRun >= FORGET_ROUTE_AFTER) {
       historyCount = 0;
       historyIndex = 0;
     }
@@ -589,8 +609,14 @@ public class ApertureScan {
 
     if (stableFit == Fit.WALK || stableFit == Fit.SQUEEZE) {
       chosenWorldYaw = cameraYawDeg + bearing;
-    } else {
-      // blocked or blind: no route to be loyal to, so the next one starts from straight ahead
+      blockedRun = 0;
+    } else if (++blockedRun >= FORGET_ROUTE_AFTER) {
+      // Only after the route has been gone for a while.
+      //
+      // Clearing on the first blocked frame threw the hysteresis away 21 times in one logged
+      // session, because BLOCKED flickers in a cluttered room. Every clear let the next heading
+      // start from scratch, which is why the advice flipped between "go left" and "go right"
+      // about the same chair.
       chosenWorldYaw = Float.NaN;
     }
     lastGap = new Gap(stableFit, bearing, width, clearAhead, edge, coverage, barrier);

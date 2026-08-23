@@ -41,7 +41,7 @@ public class ObjectMemory {
   private static final float MATCH_TOLERANCE_M = 0.60f;
 
   /** prediction is only trusted this far ahead; past it the track is just a memory */
-  private static final long PREDICT_LIMIT_MS = 1500;
+  private static final long PREDICT_LIMIT_MS = 2500;
 
   /**
    * How much of the frame an object fills before we call it within arm's reach whatever depth says.
@@ -141,8 +141,10 @@ public class ObjectMemory {
       // walking towards a thing closes the distance at the speed you are walking
       float predicted = track.metres - speedMps * (age / 1000f);
       float error = Math.abs(predicted - metres);
-      // a track on the other side of the corridor is not what we just measured
-      if (Math.abs(track.lateral - lateral) > 0.5f) {
+      // a track on the other side of the corridor is not what we just measured. generous, because
+      // the track's own sideways position is estimated from a box centre and is the roughest number
+      // in this class - too tight a gate here is why hazards were reported with no name at all
+      if (Math.abs(track.lateral - lateral) > 0.9f) {
         continue;
       }
       if (error < bestError) {

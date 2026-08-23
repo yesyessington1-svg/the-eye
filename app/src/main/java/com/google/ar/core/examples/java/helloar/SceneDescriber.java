@@ -100,8 +100,11 @@ public class SceneDescriber {
    */
   private static final String NAME_PROMPT =
       "Name the single object closest to the centre of this picture, in one or two words. "
-          + "Lower case, no punctuation, no sentence. If it is a wall or a floor, say wall or "
-          + "floor. If you cannot tell, say unknown.";
+          + "Lower case, no punctuation, no sentence. "
+          + "Never answer floor, ground, carpet, tiles or anything the wearer is standing on: "
+          + "that is not an obstacle. Never describe the photograph itself - not blurry, not "
+          + "dark, not unclear. Name a thing they could walk into. If you cannot tell, say "
+          + "unknown.";
 
   public enum Mode {
     /** the wearer asked - full sentence, spoken back to them */

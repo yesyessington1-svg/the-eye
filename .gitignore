@@ -22,3 +22,6 @@ local.properties
 app/src/main/assets/efficientdet_lite0.tflite
 # agent working notes, not part of the project
 .claude/
+
+# drawing scaffolding, not part of the project
+docs/EXCALIDRAW.md

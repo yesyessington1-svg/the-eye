@@ -1936,9 +1936,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // available: it is right there.
     String touching = objectMemory.contact(System.currentTimeMillis());
     if (touching != null) {
+      // "Bench right in front of you" leaves the wearer standing at a bench with the same question
+      // they had a step ago. This is the moment a direction is worth the most, not the moment to
+      // stop talking.
+      String clear = wayAround(guardian.gap(), guardianReading);
       speech.announce(
           SpeechManager.Level.CRITICAL,
-          capitalise(touching) + " right in front of you",
+          clear == null
+              ? capitalise(touching) + " right in front of you"
+              : capitalise(touching) + " right in front of you. " + clear,
           "contact:" + touching);
       return;
     }
@@ -2336,7 +2342,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       // BLOCKED means the fan has no route to offer, and inventing one would be worse than silence
       return null;
     }
-    if (Math.abs(gap.bearingDeg) < 8f) {
+    if (Math.abs(gap.bearingDeg) < 5f) {
+      // genuinely straight on. saying "go straight" while something is in front of you is worse
+      // than saying nothing, so this stays quiet and the corridor's own line carries the warning
       return null;
     }
     String way = gap.bearingDeg < 0 ? "left" : "right";

@@ -70,6 +70,9 @@ public class ApertureScan {
   // route and sent the wearer into the wall. Below the floor of `need`, an unseen bearing can
   // never be recommended, which is the only safe reading of no evidence.
   private static final float UNKNOWN_DISTANCE_M = 0.80f;
+
+  // no single return may block more than this much of the fan, however close it is
+  private static final float MAX_DILATE_DEG = 24f;
   private static final float MAX_RANGE_M = 4.00f;
 
   // open = reaches this much past the nearest barrier. relative, not absolute: a fixed 2m
@@ -261,7 +264,20 @@ public class ApertureScan {
 
   /** the distance we are willing to claim for a bin: MAX_RANGE when nothing credible is in it */
   /** the distance we use for ROUTING, which ignores anything too close to walk around */
-  private float routingDistance(int bin) {
+  /**
+   * What a bearing is worth for the BARRIER calculation, which sets how far a route has to reach.
+   *
+   * <p>Something at 40cm should not decide how far past it you need to get, because you are not
+   * getting past it, you are stopping. But it must still block its own bearing - see
+   * {@link #blockingDistance}. Conflating the two is why a bin at 0.5m came back as free space and
+   * the fan cheerfully routed straight into a bench.
+   */
+  private float barrierDistance(int bin) {
+    // an unseen bearing must not set the threshold everything else is measured against. it leaked
+    // in as UNKNOWN_DISTANCE_M and made every doorway think the nearest barrier was 0.8m away
+    if (slabHits[bin] < MIN_BIN_HITS) {
+      return MAX_RANGE_M;
+    }
     float d = freeDistance(bin);
     // No returns at all in this direction is not the same as open, and treating it as open is how
     // the device recommended walking into painted walls: they give depth-from-motion almost nothing
@@ -287,6 +303,27 @@ public class ApertureScan {
       }
     }
     return d < ROUTING_MIN_M ? MAX_RANGE_M : d;
+  }
+
+  /**
+   * What a bearing is worth for DILATION, which decides where the body fits.
+   *
+   * <p>Here a close return counts for exactly what it is. A bin at 0.5m is not free space by any
+   * reading, and calling it free is how the wearer got told a bench was in front of them and
+   * nothing about where to go.
+   */
+  private float blockingDistance(int bin) {
+    float d = freeDistance(bin);
+    if (d >= MAX_RANGE_M && world != null) {
+      float yaw = worldYawOfBin(bin);
+      d =
+          Math.min(
+              world.freeDistanceAt(yaw, worldNowMs),
+              Math.min(
+                  world.freeDistanceAt(yaw - 1.5f, worldNowMs),
+                  world.freeDistanceAt(yaw + 1.5f, worldNowMs)));
+    }
+    return d;
   }
 
   private float freeDistance(int bin) {
@@ -316,13 +353,19 @@ public class ApertureScan {
   private void dilate(float radiusM) {
     Arrays.fill(dilated, MAX_RANGE_M);
     for (int i = 0; i < BINS; i++) {
-      float d = routingDistance(i);
+      float d = blockingDistance(i);
       if (d >= MAX_RANGE_M) {
         continue;
       }
       float ratio = radiusM / Math.max(d, 0.25f);
       float halfAngleDeg =
           ratio >= 1f ? HALF_SPAN_DEG : (float) Math.toDegrees(Math.asin(ratio));
+      // one very close return would otherwise blank the whole fan: at 0.45m the geometry says
+      // 42 degrees, and a knee that survives the body cut would leave the wearer with no route at
+      // all. capped, so close things block a wide arc but never every arc
+      if (halfAngleDeg > MAX_DILATE_DEG) {
+        halfAngleDeg = MAX_DILATE_DEG;
+      }
       int spread = (int) Math.ceil(halfAngleDeg / BIN_DEG);
       int from = Math.max(0, i - spread);
       int to = Math.min(BINS - 1, i + spread);
@@ -467,18 +510,34 @@ public class ApertureScan {
     // "open" only means anything relative to the thing you are trying to get past
     float barrier = MAX_RANGE_M;
     for (int i = 0; i < BINS; i++) {
-      barrier = Math.min(barrier, routingDistance(i));
+      barrier = Math.min(barrier, barrierDistance(i));
     }
-    if (barrier >= CLEAR_M) {
-      // nothing near enough to route around. saying "gap, two metres forty" about an empty room is
-      // technically true and practically noise
+    // Dilate before deciding anything, because "clear" is a claim about the body, not about the
+    // barrier. A bin at 0.5m never becomes the barrier - you do not route past something that
+    // close, you stop - but it still blocks its own bearings, and this early return used to fire
+    // straight over the top of that and announce a clear path into a bin.
+    dilate(BODY_RADIUS_M);
+    boolean aheadPassable = true;
+    int aheadBins = Math.max(1, (int) (AHEAD_DEG / BIN_DEG));
+    for (int i = CENTRE_BIN - aheadBins; i <= CENTRE_BIN + aheadBins; i++) {
+      if (i >= 0 && i < BINS && dilated[i] < CLEAR_M) {
+        aheadPassable = false;
+        break;
+      }
+    }
+    if (barrier >= CLEAR_M && aheadPassable) {
+      // nothing near enough to route around and nothing in the way. saying "gap, two metres forty"
+      // about an empty room is technically true and practically noise
       return settle(Fit.WALK, 0f, 0f, clearAhead, false, coverage, barrier);
     }
     // Configuration space first. Grow every obstacle by half a body, then any bearing still open
     // is one the wearer fits along - no width to measure and no ratio to compare afterwards.
     // a heading is only useful if it gets you PAST the thing in your way, not merely as far as it
-    float need = barrier + OPEN_MARGIN_M;
-    dilate(BODY_RADIUS_M);
+    // when the barrier is far but something close blocks straight ahead, the threshold has to be
+    // something the close thing can actually fail: use whichever is nearer
+    // capped below the scan limit, or a far barrier asks for more room than the fan can ever see
+    // and nothing is passable at all
+    float need = Math.min(barrier + OPEN_MARGIN_M, MAX_RANGE_M - 0.2f);
     float heading = bestHeading(need);
     if (!Float.isNaN(heading)) {
       // a heading right on the rim is us saying "go that way" about a direction we can barely see.

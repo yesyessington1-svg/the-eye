@@ -257,20 +257,51 @@ Built on Google's `hello_ar_java` sample (Apache 2.0). The AR rendering scaffold
 
 ---
 
-## Running it locally
+## What the phone needs
 
-You need an ARCore-supported Android phone with Depth API support, Android Studio, and JDK 17.
+Not every Android phone can run this, and the reason is hardware.
+
+| Requirement | Why |
+|---|---|
+| On [ARCore's supported device list](https://developers.google.com/ar/devices) | ARCore is what supplies pose, depth and plane tracking |
+| **Depth API** support on that list | there is no fallback: without depth there is no corridor and no free-space fan |
+| **Google Play Services for AR** installed | the runtime lives outside the app. Play Store installs it on first launch if it is missing |
+| Android 7.0 (API 24) or newer | |
+| Camera and microphone permission | camera for everything, microphone only for the spoken commands |
+
+A depth sensor is **not** required. The phone we built on has none, and the whole project is shaped
+by that: depth comes from motion, which is why standing still degrades it and why so much of the
+code is about knowing when the sensor is guessing.
+
+## Installing the built APK
+
+The quickest way to get it onto a phone, no cable and no Android Studio.
+
+1. Copy `app-debug.apk` to the phone by any route: cable, Drive, email, a chat app.
+2. Open it from the phone's Files app.
+3. Android will refuse the first time and offer a settings toggle. Allow installs from that app,
+   then tap the APK again.
+4. On first launch, grant **camera** and **microphone**. If Play Services for AR is missing, Play
+   Store offers it here; accept and relaunch.
+
+The debug APK is around 110 MB because the two on-device models ship inside it: EfficientDet-Lite2
+is 23 MB and the hand landmarker 7.8 MB, both stored uncompressed so they can be memory-mapped
+straight out of the package rather than unpacked to disk on every cold start.
+
+## Building it yourself
+
+You need Android Studio and JDK 17.
 
 ```bash
-git clone https://github.com/yesyessington1-svg/reach.git
-cd reach
+git clone https://github.com/yesyessington1-svg/the-eye.git
+cd the-eye
 ```
 
 Create `local.properties` in the project root:
 
 ```properties
 sdk.dir=/path/to/your/Android/Sdk
-openaiApiKey=sk-... # optional, only the scene description needs it
+openaiApiKey=sk-...        # optional, only the scene description needs it
 ```
 
 Build and install:
@@ -287,10 +318,9 @@ set JAVA_HOME=C:\Program Files\Android\Android Studio\jbr
 gradlew.bat assembleDebug
 ```
 
-The API key lands inside the APK. That is acceptable for a demo we hand to nobody and wrong for
-anything shipped; the real fix is a server we did not have time to build.
-
----
+Without an API key everything still runs except the scene description, which is the only part that
+leaves the device. The key lands inside the APK, which is fine for a demo we hand to nobody and
+wrong for anything shipped; the real fix is a server we did not have time to build.
 
 ## Honest limits
 

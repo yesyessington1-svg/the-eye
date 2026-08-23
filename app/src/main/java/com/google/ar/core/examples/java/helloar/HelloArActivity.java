@@ -272,7 +272,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private TextView dirLeft;
   private TextView dirCentre;
   private TextView dirRight;
+  private View hapticPulse;
   private int lastLitDirection = -2;
+  private volatile float lastPulseAlpha = -1f;
   private String lastHudChannel = "";
   private String lastHudState = "";
   private String lastHudDetail = "";
@@ -294,6 +296,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   // above MotionBudget's 0.05 still threshold, so head sway on the spot is not walking
   private static final float WALKING_MPS = 0.15f;
+
+  // log-odds the grid must hold at that distance before the loud stop is allowed. below the grid's
+  // own belief threshold of 1.75, because a real thing arriving should not have to be certain
+  // before it may be shouted about
+  private static final float BEAM_MIN_SUPPORT = 0.8f;
 
   // a box whose own depth is within this of the corridor's reading is the thing the corridor hit
   private static final float HAZARD_NAME_TOLERANCE_M = 0.50f;
@@ -322,12 +329,30 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private static final float FLOOR_RUNOUT_M = 1.00f;
   // and it takes this many floor samples before we are willing to say so
   private static final int FLOOR_RUNOUT_MIN_SAMPLES = 100;
+  // and nothing within this may be standing in the way, or IT is why the floor stopped
+  private static final float FLOOR_RUNOUT_CLEAR_BARRIER_M = 2.50f;
 
   // where the visible floor ends, metres. NaN when we cannot see any
   private float floorEndsM = Float.NaN;
 
   // what the detector calls the thing the corridor is currently measuring, or null
+  // the detector runs at 5Hz and the corridor at 30Hz, so on most frames there is no box to match
+  // even though one existed a moment ago. holding the last name means the spoken line gets to say
+  // "chair" instead of "obstacle" from a detection the wearer never knew happened
   private String hazardName = null;
+  private final ObjectMemory objectMemory = new ObjectMemory();
+
+  // what the vision model called the thing the local detector had no word for
+  private volatile String askedName = null;
+  private long askedNameMs = 0;
+  private long lastNameAskMs = 0;
+
+  // one naming call per this long. it costs money and a round trip, and the corridor is already
+  // warning about the thing either way - the noun is an upgrade, not the warning itself
+  private static final long NAME_ASK_COOLDOWN_MS = 8000;
+  // and only worth asking while the wearer is slow enough for the answer to still apply
+  private static final float NAME_ASK_MAX_MPS = 0.9f;
+  private static final long ASKED_NAME_FRESH_MS = 6000;
   private final float[] boxCentre = new float[2];
   private final float[] boxCentreTex = new float[2];
 
@@ -417,6 +442,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     dirLeft = findViewById(R.id.dir_left);
     dirCentre = findViewById(R.id.dir_centre);
     dirRight = findViewById(R.id.dir_right);
+    hapticPulse = findViewById(R.id.haptic_pulse);
     // the menu says which mode to open in; launched any other way we keep the arbiter's default
     String requested = getIntent() == null ? null : getIntent().getStringExtra(MenuActivity.EXTRA_MODE);
     if (requested != null) {
@@ -828,7 +854,52 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         guardianReading =
             guardian.evaluate(
                 depthImage, camera.getImageIntrinsics(), motionBudget.speedMps(), upInCamera);
-        hazardName = nameHazard(frame, depthImage, guardianReading);
+        long memoryNow = System.currentTimeMillis();
+        rememberObjects(frame, depthImage, memoryNow);
+        objectMemory.expire(memoryNow);
+        hazardName =
+            guardianReading.state == GuardianCorridor.State.HAZARD
+                ? objectMemory.nameAt(
+                    guardianReading.distanceMeters,
+                    guardianReading.lateralMeters,
+                    memoryNow,
+                    motionBudget.speedMps())
+                : null;
+
+        // depth is certain, the local detector has no word for it, so ask the one that has every
+        // word. pillars, radiators, desks and bollards are all outside COCO's eighty classes
+        if (hazardName == null
+            && guardianReading.state == GuardianCorridor.State.HAZARD
+            && guardianReading.distanceMeters < 2.5f
+            && motionBudget.speedMps() < NAME_ASK_MAX_MPS
+            && describer.isConfigured()
+            && !describer.isBusy()
+            && memoryNow - lastNameAskMs > NAME_ASK_COOLDOWN_MS) {
+          lastNameAskMs = memoryNow;
+          try (Image nameImage = frame.acquireCameraImage()) {
+            Bitmap nameShot = frameConverter.convert(nameImage, 2, uprightDegrees(upInCamera));
+            describer.describe(
+                nameShot,
+                SceneDescriber.Mode.NAME,
+                "",
+                text -> {
+                  String word = text == null ? "" : text.trim().toLowerCase(Locale.UK);
+                  if (!word.isEmpty() && !word.startsWith("unknown") && word.length() < 24) {
+                    askedName = word;
+                    askedNameMs = System.currentTimeMillis();
+                    Log.i(TAG, "EYE_NAME model called it \"" + word + "\"");
+                  }
+                });
+          } catch (NotYetAvailableException e) {
+            // no camera image this frame; the cooldown will let us try again
+          }
+        }
+        if (hazardName == null
+            && askedName != null
+            && memoryNow - askedNameMs < ASKED_NAME_FRESH_MS
+            && guardianReading.state == GuardianCorridor.State.HAZARD) {
+          hazardName = askedName;
+        }
         // naN means no floor in view at all, which is the worst case, not the best
         float nearestFloor = guardian.nearestFloorMetres();
         groundSightM = Float.isNaN(nearestFloor) ? Float.POSITIVE_INFINITY : nearestFloor;
@@ -838,6 +909,21 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         // confidence histogram kept changing every frame. Reconfiguring the session fired fourteen
         // times and never unstuck it. So when the smoothed image stops being new we stop reading
         // it, rather than announcing blindness next to a sensor that is still working
+        // the occupancy grid runs every frame off the raw stream, whatever the smoothed one says.
+        // it is the only place ARCore's per-pixel confidence is used, and confidence is what tells
+        // a hallucinated surface apart from a real one at the same distance
+        try (Image beamDepth = frame.acquireRawDepthImage16Bits();
+            Image beamConfidence = frame.acquireRawDepthConfidenceImage()) {
+          guardian.observeRaw(
+              beamDepth,
+              beamConfidence,
+              camera.getImageIntrinsics(),
+              upInCamera,
+              motionBudget.movedSinceLastFrameM());
+        } catch (NotYetAvailableException e) {
+          // no raw frame this tick; the grid simply gets no new evidence and decays
+        }
+
         if (guardianReading.state == GuardianCorridor.State.STALE) {
           try (Image rawDepth = frame.acquireRawDepthImage16Bits();
               Image rawConfidence = frame.acquireRawDepthConfidenceImage()) {
@@ -994,12 +1080,18 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
           // model cannot measure distance from one photograph - asked to, it answered GO with an
           // obstacle under a metre away. it names the thing, the sensor says whether you can go
           int depthSeverity = depthSeverity(guardianReading, groundSightM > GROUND_SIGHT_LIMIT_M);
+          // the model names the thing and is forbidden from guessing distances, so the sensor
+          // supplies the number and the fan supplies the way round
+          final String shotDistance = shotDetail(guardianReading, guardian.gap());
           describer.describe(
               shot,
               SceneDescriber.Mode.SCENE,
               depthNote(guardianReading),
               text -> {
                 String spoken = combineVerdicts(depthSeverity, text);
+                if (shotDistance != null) {
+                  spoken = spoken + " " + shotDistance;
+                }
                 lastDescription = spoken;
                 lastDescriptionMs = System.currentTimeMillis();
                 speech.announce(SpeechManager.Level.REQUESTED, spoken);
@@ -1275,12 +1367,24 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                     guardianReading.distanceMeters),
             "obstacle in the corridor \u00b7 " + guardianReading.hitCount + " samples" + raw,
             COLOR_HAZARD);
-      } else if (floorRunsOut()) {
+      } else if (objectMemory.contact(System.currentTimeMillis()) != null) {
+        String touch = objectMemory.contact(System.currentTimeMillis());
         updateHud(
-            "FLOOR ENDS",
+            touch.toUpperCase(Locale.US) + " \u00b7 CONTACT",
+            "fills the frame \u00b7 too close for depth to measure",
+            COLOR_HAZARD);
+      } else if (floorRunsOut()) {
+        String blocking =
+            objectMemory.nameAt(floorEndsM, 0f, System.currentTimeMillis(), motionBudget.speedMps());
+        updateHud(
+            blocking == null ? "GROUND STOPS" : blocking.toUpperCase(Locale.US),
             String.format(
-                Locale.US, "ground stops at %.1f m, space runs to %.1f m \u00b7 step or drop",
-                floorEndsM, guardian.gap().clearAheadM),
+                Locale.US,
+                "floor ends at %.1f m, space runs to %.1f m \u00b7 %s",
+                floorEndsM,
+                guardian.gap().clearAheadM,
+                blocking == null ? "step, drop, or something depth cannot see"
+                    : "seen in colour, invisible to depth"),
             COLOR_HAZARD);
       } else if (groundSightM > GROUND_SIGHT_LIMIT_M) {
         updateHud(
@@ -1625,7 +1729,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             vision == null ? 0 : vision.objectCount(),
             vision == null ? "-" : vision.objectNames(),
             uprightDegrees(upInCamera),
-            String.valueOf(hazardName),
+            String.valueOf(hazardName) + "/" + objectMemory.diagnostics(),
             groundSightM,
             floorEndsM));
   }
@@ -1695,6 +1799,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
     String phrase = null;
+    String situationKey = "";
     SpeechManager.Level level = SpeechManager.Level.MEDIUM;
 
     if (pointed != null && pointed.found) {
@@ -1724,12 +1829,20 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // being given a routing option instead of a stop is worse than being given nothing.
     // "stop" means stop walking - useless shouted at someone standing still, which is what you do
     // while aiming the phone at something. HUD and haptics still fire, only the word is gated
-    if (imminent && motionBudget.speedMps() >= WALKING_MPS) {
+    // A "stop" that turns out to be nothing costs more than a missed one, because after two of
+    // them nobody listens to the third. So the loudest sentence in the app has to be backed by the
+    // occupancy grid, not by one frame's percentile. On a logged corridor walk the percentile
+    // reported a surface at 0.7-1.2m on 99% of frames and there was nothing there.
+    boolean evidenceBacked =
+        !guardian.beamHasEvidence()
+            || guardian.beamSupportAt(guardianReading.distanceMeters) > BEAM_MIN_SUPPORT;
+    if (imminent && motionBudget.speedMps() >= WALKING_MPS && evidenceBacked) {
       float rounded = Math.round(guardianReading.distanceMeters * 2f) / 2f;
       speech.announce(
           SpeechManager.Level.CRITICAL,
           String.format(
-              Locale.UK, "Stop. %.1f metres, %s", rounded, side(guardianReading.lateralMeters)));
+              Locale.UK, "Stop. %.1f metres, %s", rounded, side(guardianReading.lateralMeters)),
+          "stop:" + side(guardianReading.lateralMeters));
       return;
     }
 
@@ -1753,17 +1866,46 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
               && (describer.isBusy()
                   || (blindSinceMs != 0 && nowMs - blindSinceMs < FALLBACK_GRACE_MS));
       if (!answerFresh && !backupStillTrying) {
-        speech.announce(SpeechManager.Level.HIGH, blindnessPhrase(guardian.blindness()));
+        speech.announce(
+            SpeechManager.Level.HIGH,
+            blindnessPhrase(guardian.blindness()),
+            "blind:" + guardian.blindness());
       }
+      return;
+    }
+
+    // Above everything, including the corridor's own reading.
+    //
+    // Something filling half the picture is at arm's length whatever depth thinks, and depth here
+    // thinks 1.2 to 2.5 metres because it cannot see anything that close. Announcing a distance
+    // then would be announcing a measurement we know to be wrong, so this says the only true thing
+    // available: it is right there.
+    String touching = objectMemory.contact(System.currentTimeMillis());
+    if (touching != null) {
+      speech.announce(
+          SpeechManager.Level.CRITICAL,
+          capitalise(touching) + " right in front of you",
+          "contact:" + touching);
       return;
     }
 
     // above the routing advice, because the fan reads a staircase going down as a wide open gap and
     // will cheerfully send the wearer into it
     if (floorRunsOut()) {
+      // The floor stopping means one of two things and we can often tell which.
+      //
+      // A staircase going down, or something standing there that depth could not see - a black
+      // backpack has no texture to track and absorbs the light, so depth-from-motion reports an
+      // empty corridor while the thing plainly occludes the floor behind it. In that case this is
+      // the only channel that noticed, and the detector can supply the noun.
+      String blocking =
+          objectMemory.nameAt(floorEndsM, 0f, System.currentTimeMillis(), motionBudget.speedMps());
       speech.announce(
           SpeechManager.Level.CRITICAL,
-          String.format(Locale.UK, "Careful, floor ends %.1f metres ahead", floorEndsM));
+          blocking == null
+              ? String.format(Locale.UK, "Careful, ground stops %.1f metres ahead", floorEndsM)
+              : String.format(Locale.UK, "Careful, %s ahead", blocking),
+          "floorEnds:" + blocking);
       return;
     }
 
@@ -1786,9 +1928,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         // the same doorway for several seconds, and repeating it turns guidance into nagging
         if (gap.fit == ApertureScan.Fit.UNKNOWN) {
           phrase = "I cannot read the space ahead";
+          situationKey = "gapUnknown";
           level = SpeechManager.Level.HIGH;
         } else if (modes.gapAdviceIsNew(gap)) {
           phrase = ApertureScan.describe(gap);
+          situationKey = "gap:" + gap.fit + ":" + Math.round(gap.bearingDeg / 15f);
           level =
               gap.fit == ApertureScan.Fit.WALK
                   ? SpeechManager.Level.MEDIUM
@@ -1811,19 +1955,37 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                   named == null ? "Obstacle" : capitalise(named),
                   rounded,
                   side(guardianReading.lateralMeters));
+          // the noun, the half-metre band and the side. walking a chair down from four metres to
+          // one is ONE situation until one of those three actually changes
+          // naming the thing tells you to stop. naming the way round tells you what to do next,
+          // and the fan already worked it out. only appended when the thing is actually in the way
+          // and the fan is confident, or every sentence doubles in length for nothing
+          String around = wayAround(gap, guardianReading);
+          if (around != null) {
+            phrase = phrase + ". " + around;
+          }
+          situationKey =
+              "hazard:"
+                  + (named == null ? "?" : named)
+                  + ":"
+                  + rounded
+                  + ":"
+                  + side(guardianReading.lateralMeters);
           level = SpeechManager.Level.HIGH;
         } else if (personOverride) {
           phrase = "Person ahead";
+          situationKey = "person";
           level = SpeechManager.Level.HIGH;
         } else if (motionBudget.shouldAskForMotion()) {
           phrase = "Move your head";
+          situationKey = "sway";
           level = SpeechManager.Level.MEDIUM;
         }
         break;
     }
 
     if (phrase != null) {
-      speech.announce(level, phrase);
+      speech.announce(level, phrase, situationKey);
     }
   }
 
@@ -1961,6 +2123,22 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     return sentence.isEmpty() ? word : word + " " + sentence;
   }
 
+  /**
+   * The half of the answer the model cannot produce: how far, and which way round.
+   *
+   * <p>"A chair is in front of you" is a description. "A chair is in front of you, one and a half
+   * metres, clear to your left" is something a person can act on without asking a second question.
+   */
+  private String shotDetail(GuardianCorridor.Reading reading, ApertureScan.Gap gap) {
+    if (reading == null || reading.state != GuardianCorridor.State.HAZARD) {
+      return null;
+    }
+    float rounded = Math.round(reading.distanceMeters * 2f) / 2f;
+    String detail = String.format(Locale.UK, "About %.1f metres.", rounded);
+    String around = wayAround(gap, reading);
+    return around == null ? detail : detail + " " + around + ".";
+  }
+
   /** the measurement, handed to the model so its sentence agrees with the sensor */
   private static String depthNote(GuardianCorridor.Reading reading) {
     if (reading == null || reading.state != GuardianCorridor.State.HAZARD) {
@@ -2033,8 +2211,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         || guardian.floorSampleCount() < FLOOR_RUNOUT_MIN_SAMPLES) {
       return false;
     }
+    // anything standing in the strip hides the floor behind it, and that is the ordinary reason
+    // the floor stops - not a drop. so this only speaks when the corridor is genuinely empty and
+    // the fan has nothing near to route around. without these two the warning fired at every
+    // object the detector saw, which is the opposite of a drop
+    if (guardianReading == null || guardianReading.state != GuardianCorridor.State.CLEAR) {
+      return false;
+    }
     ApertureScan.Gap gap = guardian.gap();
-    if (gap.coverage < 0.6f) {
+    if (gap.coverage < 0.6f || gap.barrierM < FLOOR_RUNOUT_CLEAR_BARRIER_M) {
       return false;
     }
     return gap.clearAheadM - floorEndsM > FLOOR_RUNOUT_M;
@@ -2075,28 +2260,48 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     return text;
   }
 
+  /**
+   * Which way round the thing in the corridor, from the free-space fan, or null when there is
+   * nothing useful to add.
+   *
+   * <p>Kept quiet unless the obstacle is genuinely in the path and the fan trusts itself. A
+   * direction offered around something the wearer was already going to walk past is noise.
+   */
+  private String wayAround(ApertureScan.Gap gap, GuardianCorridor.Reading reading) {
+    if (gap == null || reading == null) {
+      return null;
+    }
+    if (Math.abs(reading.lateralMeters) > 0.18f) {
+      // already off to one side, so the wearer is not walking into it
+      return null;
+    }
+    if (gap.fit != ApertureScan.Fit.WALK || gap.coverage < 0.6f) {
+      return null;
+    }
+    if (Math.abs(gap.bearingDeg) < 8f) {
+      return null;
+    }
+    return gap.bearingDeg < 0 ? "Clear to your left" : "Clear to your right";
+  }
+
   private static String capitalise(String word) {
     return word.isEmpty() ? word : Character.toUpperCase(word.charAt(0)) + word.substring(1);
   }
 
   /**
-   * What the corridor is looking at, named. Depth has the distance and no noun; the detector has
-   * the noun and no distance.
+   * Hand every detection this frame to the memory, with a depth reading where one exists.
    *
-   * <p>Joined by depth, not geometry. Projecting the hazard back into image coordinates by hand
-   * fired on 1 frame in 72 - the detector works on a bitmap straightened for the current grip, and
-   * that changes as the phone tilts. Sampling each box centre through ARCore's own transform has
-   * no orientation to get wrong.
+   * <p>Depth and colour are sampled through ARCore's own coordinate transform rather than by
+   * projecting boxes by hand. The hand-rolled version fired on 1 frame in 72, because the detector
+   * works on a bitmap straightened for the current grip and that grip changes as the phone tilts.
    */
-  private String nameHazard(Frame frame, Image depthImage, GuardianCorridor.Reading reading) {
-    if (reading == null || reading.state != GuardianCorridor.State.HAZARD || vision == null) {
-      return null;
+  private void rememberObjects(Frame frame, Image depthImage, long nowMs) {
+    if (vision == null) {
+      return;
     }
     float[] boxes = vision.objectBoxes();
     String[] labels = vision.objectLabels();
     int count = Math.min(vision.objectCount(), labels.length);
-    String best = null;
-    float bestError = HAZARD_NAME_TOLERANCE_M;
     for (int i = 0; i < count; i++) {
       if (labels[i] == null || "person".equals(labels[i])) {
         // people have their own channel and their own sentence
@@ -2108,16 +2313,14 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
           Coordinates2d.IMAGE_NORMALIZED, boxCentre, Coordinates2d.TEXTURE_NORMALIZED,
           boxCentreTex);
       float metres = sampleDepth(depthImage, boxCentreTex[0], boxCentreTex[1]);
-      if (Float.isNaN(metres)) {
-        continue;
-      }
-      float error = Math.abs(metres - reading.distanceMeters);
-      if (error < bestError) {
-        bestError = error;
-        best = labels[i];
-      }
+      // sideways offset from the middle of the picture, scaled to metres at that distance. rough,
+      // and only used to reject a track sitting on the opposite side of the corridor
+      float lateral = Float.isNaN(metres) ? 0f : (boxCentre[0] - 0.5f) * metres;
+      float share =
+          Math.abs((boxes[i * 4 + 2] - boxes[i * 4]) * (boxes[i * 4 + 3] - boxes[i * 4 + 1]));
+      objectMemory.observe(
+          labels[i], boxCentre[0], boxCentre[1], metres, lateral, share, nowMs);
     }
-    return best;
   }
 
   /** depth off and straight back on - keeps the preview up while the depth pipeline restarts */

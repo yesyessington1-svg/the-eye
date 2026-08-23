@@ -167,6 +167,15 @@
         android:maxLines="2"
         android:textColor="#FFFFFF"/>
 
+    <!-- flashes on the same beat as the motor, because the motor is invisible to a room -->
+    <View
+        android:id="@+id/haptic_pulse"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:layout_marginTop="14dp"
+        android:background="#FF5C4D"
+        android:alpha="0"/>
+
     <TextView
         android:id="@+id/hud_detail"
         android:layout_width="match_parent"

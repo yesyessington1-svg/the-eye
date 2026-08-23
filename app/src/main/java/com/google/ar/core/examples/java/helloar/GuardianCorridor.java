@@ -202,6 +202,7 @@ public class GuardianCorridor {
   // the free-space channel. it rides along in the same pixel loop because it wants the same points,
   // already converted to gravity-referenced metres - walking the depth image twice would be silly
   private final ApertureScan aperture = new ApertureScan();
+  private final OccupancyBeam beam = new OccupancyBeam();
 
   private Blindness blindness = Blindness.NONE;
 
@@ -376,6 +377,87 @@ public class GuardianCorridor {
    * changed every frame - one sensor dead, the other fine, and we were reading the dead one. Raw
    * is noisier, so the confidence plane filters it and MIN_HITS decides what survives.
    */
+  /**
+   * Feed the occupancy grid from the raw stream, weighted by ARCore's own confidence.
+   *
+   * <p>This is separate from evaluate() because the two want different things. The corridor wants
+   * the smoothed image, which is dense and gap-free. The grid wants to know how much each pixel is
+   * worth, and only the raw stream carries that - smoothed depth fills its holes by interpolation
+   * and reports 100% valid whether it knows or is guessing.
+   *
+   * <p>Confidence is squared. A corridor walk logged 90% of pixels in the lowest confidence band
+   * while depth hallucinated a surface at 0.9m on 99% of them; linear weighting still lets that
+   * through, squaring makes it worth nothing. A real wall at the same distance, even at a middling
+   * confidence of 60, still crosses the threshold on every frame.
+   */
+  public void observeRaw(
+      Image rawDepth,
+      Image rawConfidence,
+      CameraIntrinsics intrinsics,
+      float[] upInCamera,
+      float movedMetres) {
+    beam.beginFrame(movedMetres);
+    ShortBuffer depth =
+        rawDepth.getPlanes()[0].getBuffer().order(ByteOrder.nativeOrder()).asShortBuffer();
+    Image.Plane plane = rawConfidence.getPlanes()[0];
+    ByteBuffer conf = plane.getBuffer().order(ByteOrder.nativeOrder());
+    int confRowStride = plane.getRowStride();
+    int confPixelStride = plane.getPixelStride();
+
+    int width = rawDepth.getWidth();
+    int height = rawDepth.getHeight();
+    int[] cameraDims = intrinsics.getImageDimensions();
+    float fx = intrinsics.getFocalLength()[0] * width / cameraDims[0];
+    float fy = intrinsics.getFocalLength()[1] * height / cameraDims[1];
+    float cx = intrinsics.getPrincipalPoint()[0] * width / cameraDims[0];
+    float cy = intrinsics.getPrincipalPoint()[1] * height / cameraDims[1];
+    float bottom = lastBottom;
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        int millimeters = depth.get(y * width + x) & 0xFFFF;
+        if (millimeters == 0 || millimeters > SCAN_FAR_M * 1000) {
+          continue;
+        }
+        float z = millimeters / 1000f;
+        float pointX = z * (x - cx) / fx;
+        float pointY = z * (cy - y) / fy;
+        float aboveCamera = pointX * upInCamera[0] + pointY * upInCamera[1] - z * upInCamera[2];
+        float rangeSquared = pointX * pointX + pointY * pointY + z * z;
+        float ground = (float) Math.sqrt(Math.max(0f, rangeSquared - aboveCamera * aboveCamera));
+
+        if (ground < SELF_RANGE_M || (ground < SELF_GROUND_M && aboveCamera < SELF_HEIGHT_M)) {
+          continue;
+        }
+        if (pointX < -HALF_WIDTH_M || pointX > HALF_WIDTH_M) {
+          continue;
+        }
+        if (aboveCamera > TOP_M || aboveCamera < bottom) {
+          continue;
+        }
+        int c = conf.get(y * confRowStride + x * confPixelStride) & 0xFF;
+        float weight = (c / 255f) * (c / 255f);
+        beam.observe(ground, weight);
+      }
+    }
+  }
+
+  public float beamSupportAt(float metres) {
+    return beam.supportAt(metres);
+  }
+
+  public float beamNearest() {
+    return beam.nearestOccupied();
+  }
+
+  public boolean beamHasEvidence() {
+    return beam.hasEvidence();
+  }
+
+  public String beamDiagnostics() {
+    return beam.diagnostics();
+  }
+
   public Reading evaluateRaw(
       Image rawDepth,
       Image rawConfidence,

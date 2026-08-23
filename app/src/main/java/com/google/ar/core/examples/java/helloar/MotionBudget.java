@@ -30,6 +30,7 @@ public class MotionBudget {
   private boolean havePrevious = false;
   private long lastSampleMs = 0;
   private float speedMps = 0f;
+  private float lastStepM = 0f;
   private long blindAndStillSinceMs = 0;
 
   /**
@@ -47,6 +48,11 @@ public class MotionBudget {
       // heavy smoothing - we care whether someone is standing still, not whether they
       // twitched, and a jumpy estimate would make the cue flicker on and off
       speedMps = speedMps + 0.15f * (instant - speedMps);
+      // raw, unsmoothed, because the occupancy grid needs the actual distance travelled since the
+      // last frame to shift its cells. a smoothed speed would slide the map by the wrong amount
+      lastStepM = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    } else {
+      lastStepM = 0f;
     }
     System.arraycopy(translation, 0, lastTranslation, 0, 3);
     lastSampleMs = now;
@@ -79,6 +85,11 @@ public class MotionBudget {
   public boolean shouldAskForMotion() {
     return blindAndStillSinceMs != 0
         && System.currentTimeMillis() - blindAndStillSinceMs > PATIENCE_MS;
+  }
+
+  /** how far the wearer actually travelled since the last frame, metres */
+  public float movedSinceLastFrameM() {
+    return lastStepM;
   }
 
   public float speedMps() {

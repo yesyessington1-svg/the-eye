@@ -7,6 +7,7 @@ package com.google.ar.core.examples.java.helloar;
 
 import android.content.Context;
 import android.os.Build;
+import android.media.AudioAttributes;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -23,7 +24,16 @@ public class HapticEngine {
 
   // a double tap is hard to confuse with a notification and hard to confuse with the single long
   // buzz below. gap is short enough that the two taps read as one event
-  private static final long[] GUARDIAN_DOUBLE_BUZZ = {0, 55, 45, 55};
+  // the alarm channel, not the touch-feedback one. a mobility warning is not a keyboard click
+  private static final AudioAttributes ALARM_ATTRIBUTES =
+      new AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_ALARM)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+          .build();
+
+  // 55ms was tuned against the default amplitude. at full strength a shorter, harder tap reads more
+  // clearly through clothing than a long soft one
+  private static final long[] GUARDIAN_DOUBLE_BUZZ = {0, 70, 60, 70};
 
   // slowest and fastest repeat. 1100ms at the far edge of the corridor is a background heartbeat;
   // 220ms at 0.6m is urgent without becoming a continuous buzz, which stops carrying information
@@ -199,10 +209,43 @@ public class HapticEngine {
     return (long) (FASTEST_REPEAT_MS + t * (SLOWEST_REPEAT_MS - FASTEST_REPEAT_MS));
   }
 
+  /**
+   * Every buzz at full strength, on the alarm channel.
+   *
+   * <p>createWaveform() without an amplitude array runs at DEFAULT_AMPLITUDE, which Samsung maps to
+   * its touch-feedback level and the user's own haptic-strength slider scales down further. On a
+   * phone strapped to someone's chest under a coat that is not a warning, it is a rumour. The
+   * amplitude array pins every on-segment to 255, and the alarm usage puts it on the channel meant
+   * for things you must not miss rather than the one meant for keyboard clicks.
+   */
+  /**
+   * When the motor last fired, so the screen can show a pulse.
+   *
+   * <p>The whole output of this class is invisible to anyone not wearing the phone, which during
+   * judging is everyone in the room. A bar that flashes on the same beat is the only way an
+   * audience can tell the difference between "warning faster" and "warning slower".
+   */
+  public long lastFireMs() {
+    return lastFireMs;
+  }
+
+  private long lastFireMs = 0;
+
   @SuppressWarnings("deprecation")
   private void fire(long[] pattern) {
+    lastFireMs = System.currentTimeMillis();
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+      int[] amplitudes = new int[pattern.length];
+      for (int i = 0; i < pattern.length; i++) {
+        // waveform timings alternate off, on, off, on - odd indices are the buzzes
+        amplitudes[i] = (i % 2 == 1) ? 255 : 0;
+      }
+      VibrationEffect effect = VibrationEffect.createWaveform(pattern, amplitudes, -1);
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        vibrator.vibrate(effect, ALARM_ATTRIBUTES);
+      } else {
+        vibrator.vibrate(effect);
+      }
     } else {
       // minSdk is 24 and VibrationEffect landed in 26, so the old call has to stay
       vibrator.vibrate(pattern, -1);

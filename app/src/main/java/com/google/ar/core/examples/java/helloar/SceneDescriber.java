@@ -81,11 +81,29 @@ public class SceneDescriber {
           + "Judge distance from how much of the frame the thing fills. "
           + "If unsure between clear and an obstacle, say the obstacle.";
 
+  /**
+   * Name one thing, in one or two words.
+   *
+   * <p>The on-device detector knows COCO's eighty classes and nothing else, so a pillar, a
+   * radiator, a desk or a bollard come back as "obstacle" no matter how clearly depth sees them.
+   * MediaPipe has no larger detector to swap in - Lite2 is the biggest one it ships - and an
+   * open-vocabulary detector takes seconds per frame on a phone.
+   *
+   * <p>So when the corridor is certain something is there and the local detector has no word for
+   * it, we spend one network call on the model that does have the word, and remember the answer.
+   */
+  private static final String NAME_PROMPT =
+      "Name the single object closest to the centre of this picture, in one or two words. "
+          + "Lower case, no punctuation, no sentence. If it is a wall or a floor, say wall or "
+          + "floor. If you cannot tell, say unknown.";
+
   public enum Mode {
     /** the wearer asked - full sentence, spoken back to them */
     SCENE,
     /** depth died and we are standing in for it - one closed-set answer */
-    FALLBACK
+    FALLBACK,
+    /** depth can see it, the local detector has no word for it - one or two words back */
+    NAME
   }
 
   public interface Callback {
@@ -173,7 +191,7 @@ public class SceneDescriber {
             .put("url", "data:image/jpeg;base64," + base64Jpeg)
             // "low" resamples to 512 square before the model ever sees it, which throws away
             // exactly the small floor clutter this exists to catch
-            .put("detail", mode == Mode.FALLBACK ? "low" : "high"));
+            .put("detail", mode == Mode.SCENE ? "high" : "low"));
 
     JSONArray userContent = new JSONArray();
     userContent.put(
@@ -183,7 +201,9 @@ public class SceneDescriber {
                 "text",
                 mode == Mode.FALLBACK
                     ? "Is anything in my way within two metres?"
-                    : depthNote.isEmpty()
+                    : mode == Mode.NAME
+                        ? "What is this?"
+                        : depthNote.isEmpty()
                         ? "What is in front of me?"
                         : "What is in front of me? " + depthNote));
     userContent.put(image);
@@ -192,7 +212,11 @@ public class SceneDescriber {
     messages.put(
         new JSONObject()
             .put("role", "system")
-            .put("content", mode == Mode.FALLBACK ? FALLBACK_PROMPT : SYSTEM_PROMPT));
+            .put(
+                "content",
+                mode == Mode.FALLBACK
+                    ? FALLBACK_PROMPT
+                    : mode == Mode.NAME ? NAME_PROMPT : SYSTEM_PROMPT));
     messages.put(new JSONObject().put("role", "user").put("content", userContent));
 
     JSONObject body = new JSONObject();

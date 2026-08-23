@@ -48,10 +48,20 @@ public class SpeechManager {
   // a threshold flickering across its boundary from producing a stutter
   private static final long REPEAT_COOLDOWN_MS = 25000;
 
+  // the same SITUATION again only after this long. walking towards a chair is one situation from
+  // four metres to one, however many different sentences describe it on the way
+  private static final long SITUATION_REPEAT_MS = 20000;
+
   // not final: the init callback reads it, and javac won't accept a final field being read inside
   // the constructor that assigns it. volatile because that callback arrives on another thread
   private volatile TextToSpeech tts;
   private volatile boolean ready = false;
+
+  // what situation the last line described, which is not the same thing as the words used.
+  // "obstacle 1.5 metres on your left" and "obstacle 1.0 metres straight ahead" are different
+  // strings and the same situation, so comparing strings let the corridor talk every 5 seconds
+  // for as long as anything was in front of the wearer
+  private String lastKey = "";
 
   private String lastSpoken = "";
   private long lastSpokenMs = 0;
@@ -77,6 +87,14 @@ public class SpeechManager {
    * @return true if it was actually said
    */
   public boolean announce(Level level, String text) {
+    return announce(level, text, text);
+  }
+
+  /**
+   * @param situationKey what this line is ABOUT, coarsely. Two lines sharing a key are the same
+   *     news told twice and the second one is not said.
+   */
+  public boolean announce(Level level, String text, String situationKey) {
     if (!ready || text == null || text.isEmpty()) {
       return false;
     }
@@ -84,6 +102,7 @@ public class SpeechManager {
 
     if (level == Level.REQUESTED) {
       // the wearer asked. cut off whatever is being said and answer them
+      lastKey = situationKey;
       say(text, level, now, TextToSpeech.QUEUE_FLUSH);
       return true;
     }
@@ -97,6 +116,10 @@ public class SpeechManager {
     if (text.equals(lastSpoken) && now - lastSpokenMs < REPEAT_COOLDOWN_MS) {
       return false;
     }
+    if (situationKey.equals(lastKey) && now - lastSpokenMs < SITUATION_REPEAT_MS) {
+      return false;
+    }
+    lastKey = situationKey;
     say(text, level, now, TextToSpeech.QUEUE_FLUSH);
     return true;
   }

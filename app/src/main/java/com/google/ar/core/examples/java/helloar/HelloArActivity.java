@@ -2149,9 +2149,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // which was the corridor's reading for something else entirely
     return String.format(
         Locale.UK,
-        "The depth sensor says the nearest thing in the centre of view is %.1f metres away."
-            + " Use that only to decide which object matters. Do not repeat the number.",
-        reading.distanceMeters);
+        "The depth sensor measured the nearest obstacle at %.1f metres, %s. That is the thing to"
+            + " name. Use it to choose which object you describe, and do not repeat the number.",
+        reading.distanceMeters,
+        side(reading.lateralMeters));
   }
 
   /**

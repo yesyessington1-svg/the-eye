@@ -146,12 +146,57 @@ Answers "where is there room", not "what is in the way".
 **Algorithm**
 
 1. `barrier = min over all bins of freeDistance(bin)`
-2. a bin is **open** if `freeDistance(bin) ≥ barrier + 0.60`
-3. take the widest run of open bins
-4. `pinch = min(freeDistance(left of run), freeDistance(right of run))`
-5. `spanDeg = (runEnd - runStart + 1.5) × 1.5°`   ← half a bin of credit at each edge
-6. `width = 2 · pinch · tan(spanDeg / 2)`
-7. `ratio = width / 0.45` → WALK ≥ 1.22, SQUEEZE ≥ 1.00, else BLOCKED
+2. `need = barrier + 0.60`   ← a heading must get you PAST the barrier, not merely as far as it
+3. **configuration space:** grow every obstacle by the body's radius
+4. any bearing whose dilated free distance ≥ `need` is passable **by construction**
+5. among passable bearings, take the one closest to straight ahead
+6. if none: repeat with the shoulders-turned radius → SQUEEZE
+7. if still none: BLOCKED
+
+### Configuration space, step 3
+
+The step that turned this from a measurement into an instruction.
+
+```
+an obstacle at distance d blocks every bearing within
+
+        θ = arcsin(r / d)
+
+of itself, where r = 0.30 m (half a shoulder plus a hand's width)
+```
+
+| obstacle at | blocks |
+|---|---|
+| 0.5 m | ±37° |
+| 1.0 m | ±17.5° |
+| 2.0 m | ±8.6° |
+| 3.0 m | ±5.7° |
+
+Close things block a wide arc, distant things a narrow one. A width comparison cannot express that.
+
+**Why it replaced width-matching.** The old version found the widest run of open bins, converted it
+to metres at the pinch distance, and compared that to a shoulder. A logged run in a cluttered room
+reported a **median gap width of 0.23 m against a 0.45 m shoulder**, so the answer was always
+"narrow" and never a direction. Asking about the gap is the wrong question; asking which bearings
+the body fits along is the right one, and after dilation that question needs no comparison at all.
+
+From Lozano-Perez's configuration space, and the step Borenstein & Koren's VFH (1991) performs
+before choosing a heading.
+
+**Validated against the demo scenario** (backpacks on the floor, camera at 1.35 m):
+
+| scene | verdict |
+|---|---|
+| one bag dead ahead at 2 m | WALK, -16.5° |
+| two bags, 1.0 m clear gap | WALK, 0° (straight through) |
+| two bags, 0.8 m clear gap | WALK, 0° |
+| two bags, 0.6 m gap (= body diameter) | routes around, no margin to pass |
+| two bags, 0.3 m gap | routes around |
+| slalom, bag left at 1.5 m then right at 2.8 m | WALK, 0° |
+| four bags in a line | SQUEEZE at the rim, flagged as edge-of-view |
+
+And against doorways: 0.80 m at 2.5 m → WALK ahead; 0.90 m offset 0.6 m left → WALK at -12°;
+0.55 m → SQUEEZE; 0.30 m → BLOCKED; solid wall at 1.5 m → BLOCKED, at 3.5 m → clear.
 
 **Openness is relative, not absolute.** A fixed 2 m threshold made a doorway at 2.5 m vanish,
 because every direction cleared the bar and the whole fan read as one gap. The question is not "is
@@ -447,3 +492,84 @@ what to transmit mattered more than how well it was measured.
 
 Turn a signal a blind person cannot receive into two they can, weight every signal by how much it
 is worth, and transmit the failure as loudly as the reading.
+
+
+---
+
+## 15. Algorithms, and what was rejected
+
+Every choice here had an obvious alternative. The alternative is what a judge will ask about.
+
+| Problem | Chosen | Rejected, and why |
+|---|---|---|
+| what to encode for the wearer | free space (which bearings fit) | **obstacle field** ("something at 1.2 m, ten o'clock"). Published on this exact hardware in 2020 and lost to a white cane. Virtual Whiskers found free-space encoding cut cane contacts 70-80% and obstacle encoding did no better than nothing. |
+| measuring vertical | gravity from ARCore pose | **camera-relative height.** Only correct when the phone is level, which it never is on a person. Tilt down to see the floor and the corridor tilts into the floor. |
+| corridor bottom edge | anchored to the measured floor | **fixed offset from the camera.** -0.90 m from a forehead camera puts the corridor floor 65 cm above the ground, making bottles and bags structurally invisible rather than missed. |
+| floor height estimate | 30th percentile, sorted most-negative first | **60th percentile.** Estimated the floor as wherever the clutter was, which then raised the corridor above the clutter. |
+| reported obstacle distance | 5th percentile of corridor hits | **minimum.** The single nearest pixel wandered 0.3 m frame to frame on a static scene and once sat a full metre in front of the real obstacle. |
+| deciding a bearing is passable | configuration-space dilation | **measure gap width, compare to shoulder.** Median measured gap in a cluttered room was 0.23 m against a 0.45 m shoulder, so it always said "narrow" and never gave a direction. |
+| openness threshold | relative: barrier + 0.60 m | **fixed 2 m.** A doorway at 2.5 m vanished because every direction cleared the bar and the whole fan read as one gap. |
+| rejecting phantom obstacles | log-odds occupancy grid, confidence-weighted | **temporal median.** Cannot help when the sensor lies consistently: depth reported a surface at 0.9 m on 99% of consecutive frames with nothing there. Every frame agreed. |
+| weighting a depth sample | `(confidence/255)²` | **linear, or unweighted.** Linear still lets a 90%-low-confidence field through. Unweighted is what produced the phantom in the first place. |
+| depth source for the grid | raw depth | **smoothed depth.** Fills its own holes by interpolation and reports 100% valid whether it knows or is guessing. It has no confidence plane to weight by. |
+| naming an obstacle | track with motion prediction | **per-frame box matching.** The detector runs at 5 Hz and the corridor at 30 Hz, so 5 frames in 6 have no box. Matching failed on 83% of frames. |
+| rejecting a bad label | two sightings required | **trust the first.** One logged run called a backpack a "toilet" exactly once, and once is enough when it reaches an ear. |
+| distance at contact range | apparent frame share | **depth.** Depth-from-motion has no parallax at contact: pressed against a suitcase, 90% of frames reported 1.2-2.5 m and nothing below 0.7 m. |
+| drop detection | floor runs out before free space does | **compare near and far floor band heights.** Three rewrites; the last announced "step up 11 cm" at the edge of a rug across 107 stable frames. A few hundred pixels at the bottom of a 160x90 image cannot resolve 10 cm. |
+| naming things outside COCO | one vision-model call, gated | **a bigger detector.** MediaPipe ships Lite0, Lite2 and SSD MobileNetV2 and nothing else; Lite4 returns 404. A larger model has the same 80 classes anyway. Open-vocabulary detectors take seconds per frame on a phone. |
+| when to speak | one line per situation | **one line per changed sentence.** The text changes every half metre, so a text-based repeat check never fired and it spoke every 5 seconds forever. |
+| which sense speaks | arbitration by each sense's own confidence | **fixed priority list.** A dresser two metres away is an obstacle, a gap either side, and a change in the floor at the same time. All three fired. |
+| coordinate mapping image ↔ depth | `frame.transformCoordinates2d` | **hand-rolled projection through intrinsics.** Fired on 1 frame in 72, because the detector works on a bitmap straightened for the current grip and the grip changes as the phone tilts. |
+| camera image conversion thread | worker | **render thread.** Killed the depth stream outright once the CPU image went past VGA: raw validity fell from a 61-99% band to a median of zero. |
+
+---
+
+## 16. One frame, end to end
+
+A worked trace. Wearer walking at 0.8 m/s toward two backpacks 2.0 m away with a 0.9 m gap between
+them, phone at chest height tilted 25° down.
+
+**1. ARCore delivers** pose, smoothed depth, raw depth, raw confidence.
+
+**2. Gravity.** `camera.getPose().inverse().rotateVector(WORLD_UP)` → `up` in camera coordinates.
+
+**3. Corridor scan**, 14 400 depth pixels. For each:
+```
+pointX = z(x-cx)/fx ;  pointY = z(cy-y)/fy
+aboveCamera = pointX·up₀ + pointY·up₁ - z·up₂
+ground      = √(range² - aboveCamera²)
+```
+- 1 900 points are the wearer's own body (`ground < 0.35`) → cut, counted
+- 4 100 points are floor (`aboveCamera < -1.05`, within ±0.60 lateral) → floor samples
+- floor height = 30th percentile → **-1.38 m** → corridor bottom = **-1.23 m**
+- 380 points land inside the corridor box → 5th percentile → **hazard at 2.04 m, lateral +0.02**
+- every slab point also goes to the fan
+
+**4. Fan.** 41 bins. `barrier = 2.02 m`, `need = 2.62 m`. Dilate by 0.30 m: each bag blocks
+±8.6° around itself. Bins from -4° to +4° survive with a free distance of 5.5 m (the far wall).
+`bestHeading` → **0°**, WALK.
+
+**5. Occupancy grid**, fed from raw depth + confidence. Cells shift back by the 0.027 m travelled
+since the last frame. 380 corridor returns at ~2.0 m, confidence ~150 → `w = 0.35` each. Cell 17
+(2.05 m) rises to log-odds **+2.6**; cells 0-16 fall. `supportAt(2.04) = 2.6 > 0.8` → the reading
+is evidence-backed.
+
+**6. Detector**, running on a 5 Hz worker, last completed 140 ms ago: two boxes, both `backpack`,
+depth sampled at their centres → 2.1 m and 2.0 m. `ObjectMemory` matches them to existing tracks
+(sightings 6 and 5) and predicts forward by `0.8 × 0.14 = 0.11 m`.
+
+**7. Name.** `nameAt(2.04, +0.02, now, 0.8)` → nearest predicted track at 1.99 m, error 0.05 m →
+**"backpack"**.
+
+**8. Arbitration.** No contact (frame share 0.11). Hazard at 2.04 m is not imminent. Floor does not
+run out (`floorEnds = 1.95`, `clearAhead = 2.04`, difference 0.09 < 1.00). Channel → **GUARDIAN**.
+
+**9. Output.**
+- haptics: double buzz, repeat interval from 2.04 m → ~780 ms
+- speech: situation key `hazard:backpack:2.0:straight ahead`. New → speak
+  **"Backpack 2.0 metres, straight ahead. Clear to your left."**
+- HUD: `BACKPACK · 2.04 m`, direction bar lights AHEAD, pulse bar flashes on the buzz
+- CSV row written
+
+**10. Next frame** the wearer has moved 2.7 cm. The grid shifts, the tracks predict, the situation
+key is unchanged, so nothing is said again until the noun, the half-metre band or the side changes.

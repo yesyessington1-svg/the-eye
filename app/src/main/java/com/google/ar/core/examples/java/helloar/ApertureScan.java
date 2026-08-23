@@ -68,6 +68,16 @@ public class ApertureScan {
   // adult shoulder breadth. de Paz 2019 (doi:10.1371/journal.pone.0213342): blind walkers judge
   // apertures against their own shoulders and start turning at a ratio of about 1.22
   private static final float SHOULDER_M = 0.45f;
+
+  // half a shoulder plus a hand's width of margin. this is the radius every obstacle is grown by
+  private static final float BODY_RADIUS_M = 0.30f;
+
+  // a heading has to get you at least this far to be worth turning towards
+  private static final float USEFUL_HEADROOM_M = 1.60f;
+
+  // shoulders turned. de Paz measured the ratio where blind walkers start doing this at 1.22, so
+  // this is the same body at the width it presents side-on
+  private static final float SQUEEZE_RADIUS_M = 0.20f;
   private static final float RATIO_WALK = 1.22f;
   private static final float RATIO_SQUEEZE = 1.00f;
 
@@ -125,6 +135,10 @@ public class ApertureScan {
   // conflating the two cost more than half the fan
   private final int[] seen = new int[BINS];
   private final int[] slabHits = new int[BINS];
+
+  // the free-distance profile after every obstacle has been grown by the body's half width.
+  // dilated[i] is how far you could walk along bearing i WITH SHOULDERS ON, not as a point
+  private final float[] dilated = new float[BINS];
 
   private final float[] bearingHistory = new float[HISTORY];
   private final float[] widthHistory = new float[HISTORY];
@@ -224,6 +238,96 @@ public class ApertureScan {
     return min3[bin];
   }
 
+  /**
+   * Grow every obstacle by half a body, so a direction that survives is one you actually fit
+   * through.
+   *
+   * <p>Configuration space, from Lozano-Perez, and the step Borenstein and Koren's VFH does before
+   * choosing a heading. We were measuring how wide a gap was in metres and comparing it to a
+   * shoulder afterwards, which answers a question about the gap. The useful question is about the
+   * body: which bearings can it pass along. A logged run in a cluttered room reported a median gap
+   * width of 0.23 m against a 0.45 m shoulder, so the advice was always "narrow" and never a
+   * direction.
+   *
+   * <p>An obstacle at distance d blocks every bearing within asin(r/d) of itself, because at that
+   * angle your shoulder is still inside it. Close obstacles therefore block a wide arc and distant
+   * ones a narrow one, which is exactly right and is not something a width comparison can express.
+   */
+  private void dilate(float radiusM) {
+    Arrays.fill(dilated, MAX_RANGE_M);
+    for (int i = 0; i < BINS; i++) {
+      float d = freeDistance(i);
+      if (d >= MAX_RANGE_M) {
+        continue;
+      }
+      float ratio = radiusM / Math.max(d, 0.25f);
+      float halfAngleDeg =
+          ratio >= 1f ? HALF_SPAN_DEG : (float) Math.toDegrees(Math.asin(ratio));
+      int spread = (int) Math.ceil(halfAngleDeg / BIN_DEG);
+      int from = Math.max(0, i - spread);
+      int to = Math.min(BINS - 1, i + spread);
+      for (int j = from; j <= to; j++) {
+        dilated[j] = Math.min(dilated[j], d);
+      }
+    }
+  }
+
+  /**
+   * The bearing that gets you furthest, preferring straight ahead among equals.
+   *
+   * @return degrees off centre, or NaN when nothing is passable
+   */
+  private float bestHeading(float needMetres) {
+    float best = Float.NaN;
+    float bestCost = Float.MAX_VALUE;
+    for (int i = 0; i < BINS; i++) {
+      if (dilated[i] < needMetres) {
+        continue;
+      }
+      float bearing = (i - CENTRE_BIN) * BIN_DEG;
+      // turning is a cost the wearer pays, so among passable headings the straightest wins
+      float cost = Math.abs(bearing);
+      if (cost < bestCost) {
+        bestCost = cost;
+        best = bearing;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * How wide the passable arc around a heading is, in metres at the pinch distance. For the HUD
+   * only: the decision was already made in configuration space, this is just something a person
+   * watching a screen can read.
+   */
+  private float widthAlong(float bearingDeg, float need) {
+    int centre = Math.round(bearingDeg / BIN_DEG) + CENTRE_BIN;
+    if (centre < 0 || centre >= BINS) {
+      return 0f;
+    }
+    int left = centre;
+    while (left > 0 && dilated[left - 1] >= need) {
+      left--;
+    }
+    int right = centre;
+    while (right < BINS - 1 && dilated[right + 1] >= need) {
+      right++;
+    }
+    float spanDeg = (right - left + 1) * BIN_DEG;
+    // measured at the barrier, which is the pinch you actually pass through
+    float pinch = Math.max(0.4f, Math.min(need - OPEN_MARGIN_M, MAX_RANGE_M));
+    return 2f * pinch * (float) Math.tan(Math.toRadians(spanDeg / 2f));
+  }
+
+  /** how far along a dilated bearing you can walk */
+  public float headroomAt(float bearingDeg) {
+    int bin = Math.round(bearingDeg / BIN_DEG) + CENTRE_BIN;
+    if (bin < 0 || bin >= BINS) {
+      return 0f;
+    }
+    return dilated[bin];
+  }
+
   /** call after the last add() of the frame */
   public Gap finish() {
     int covered = 0;
@@ -260,6 +364,28 @@ public class ApertureScan {
       // technically true and practically noise
       return settle(Fit.WALK, 0f, 0f, clearAhead, false, coverage, barrier);
     }
+    // Configuration space first. Grow every obstacle by half a body, then any bearing still open
+    // is one the wearer fits along - no width to measure and no ratio to compare afterwards.
+    // a heading is only useful if it gets you PAST the thing in your way, not merely as far as it
+    float need = barrier + OPEN_MARGIN_M;
+    dilate(BODY_RADIUS_M);
+    float heading = bestHeading(need);
+    if (!Float.isNaN(heading)) {
+      // a heading right on the rim is us saying "go that way" about a direction we can barely see.
+      // flagged, so describe() says where rather than pretending to know how much room is there
+      boolean rim = Math.abs(heading) >= HALF_SPAN_DEG - BIN_DEG * 1.5f;
+      return settle(
+          Fit.WALK, heading, widthAlong(heading, need), clearAhead, rim, coverage, barrier);
+    }
+    // nothing fits square on. try again with shoulders turned, which is a real thing people do
+    dilate(SQUEEZE_RADIUS_M);
+    heading = bestHeading(need);
+    if (!Float.isNaN(heading)) {
+      boolean rim = Math.abs(heading) >= HALF_SPAN_DEG - BIN_DEG * 1.5f;
+      return settle(
+          Fit.SQUEEZE, heading, widthAlong(heading, need), clearAhead, rim, coverage, barrier);
+    }
+
     float openAt = barrier + OPEN_MARGIN_M;
 
     // walk the fan and pull out maximal runs of directions that get past the barrier
@@ -385,6 +511,10 @@ public class ApertureScan {
       case WALK:
         if (gap.barrierM >= CLEAR_M || gap.widthM <= 0f) {
           return "clear";
+        }
+        if (gap.openEdge) {
+          // the way round runs off the edge of the fan, so name the direction and claim nothing else
+          return "round to your " + (gap.bearingDeg < 0 ? "left" : "right");
         }
         return "gap " + bearingWords(gap.bearingDeg);
       case SQUEEZE:

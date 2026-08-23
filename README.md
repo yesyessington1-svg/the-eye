@@ -25,8 +25,8 @@ interpret the space they are standing in.
 | | |
 |---|---|
 | **Ștefan Crețu** | scientific research framing and research direction |
-| **Sandu** | creativity, vision, and design of the prototype |
-| **George** | full-stack development |
+| **Sandu Rareș** | creativity, vision, and design of the prototype |
+| **Lupu George** | full-stack development |
 
 ---
 
